@@ -285,8 +285,14 @@
                     updateUI(msg.status); updatePlayers(msg.players || []);
                     if (msg.tunnel) updateTunnel(msg.tunnel);
                     $('serverType').value = config.serverType || 'vanilla';
+                    // Set server type first
+                    $('serverType').value = config.serverType || 'vanilla';
+                    // Then load versions for that type
                     updateVersions();
-                    $('version').value = config.version || '1.21.4';
+                    // Then set the saved version
+                    setTimeout(() => {
+                        $('version').value = config.version || '1.21.4';
+                    }, 100);
                     if (msg.logs?.length) { $('console').textContent = msg.logs.join('\n'); $('console').scrollTop = $('console').scrollHeight; }
                 } else if (msg.type === 'status') updateUI(msg.status);
                 else if (msg.type === 'log') appendLog(msg.data);
