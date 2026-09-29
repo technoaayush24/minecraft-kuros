@@ -26,7 +26,7 @@ let status = 'stopped';
 let players = [];
 let tunnelAddress = null;
 let tunnelStatus = 'stopped';
-let config = { serverType: 'vanilla', version: '1.21.4', port: 25565, autoStart: false };
+let config = { serverType: 'vanilla', version: 'latest', port: 25565, autoStart: false };
 
 // MongoDB for state persistence (config only, NOT big files)
 let mongoClient = null, db = null;
@@ -121,19 +121,29 @@ let cachedVersions = { ...ALL_VERSIONS };
 let vanillaManifest = {};
 
 async function loadVersions() {
-    // Keep our 26.x versions at the top always
     const snapshot26 = ['26.3', '26.2', '26.1', '26.0', '25.1', '25.0'];
     try {
         const manifest = JSON.parse(execSync('wget -qO- "https://launchermeta.mojang.com/mc/game/version_manifest.json"', { timeout: 15000 }).toString());
         const mojangVersions = manifest.versions.filter(v => v.type === 'release').map(v => v.id).slice(0, 30);
-        // Merge: 26.x first, then Mojang versions
         cachedVersions.vanilla = [...snapshot26, ...mojangVersions];
         manifest.versions.forEach(v => { if (v.type === 'release') vanillaManifest[v.id] = v.url; });
+        
         const paper = JSON.parse(execSync('wget -qO- "https://api.papermc.io/v2/projects/paper"', { timeout: 15000 }).toString());
         if (paper.versions) cachedVersions.paper = paper.versions.reverse().slice(0, 30);
+        
+        const fabric = JSON.parse(execSync('wget -qO- "https://meta.fabricmc.net/v2/versions/game"', { timeout: 15000 }).toString());
+        if (fabric) cachedVersions.fabric = fabric.filter(v => v.stable).map(v => v.version).slice(0, 30);
+        
+        log('[Versions] Loaded: vanilla=' + cachedVersions.vanilla.length + ', paper=' + cachedVersions.paper.length + ', fabric=' + cachedVersions.fabric.length);
+        
+        // Set default to latest if config says 'latest'
+        if (config.version === 'latest') {
+            config.version = cachedVersions[config.serverType]?.[0] || '1.21.4';
+            log('[Versions] Default set to ' + config.version);
+        }
     } catch (e) {
-        // If fetch fails, use defaults
-        log('Version fetch failed, using defaults');
+        log('[Versions] Fetch failed: ' + e.message + ', using defaults');
+        if (config.version === 'latest') config.version = cachedVersions[config.serverType]?.[0] || '1.21.4';
     }
 }
 

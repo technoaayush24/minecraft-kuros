@@ -142,7 +142,6 @@
                     <button class="btn btn-secondary" id="restartBtn" onclick="restartServer()" disabled>↻</button>
                     <button class="btn btn-danger" id="stopBtn" onclick="stopServer()" disabled>■</button>
                     <button class="btn btn-secondary" onclick="saveState()" title="Save state">💾</button>
-                    <button class="btn btn-secondary" id="saveBtn" onclick="saveState()" title="Save state to cloud">💾</button>
                 </div>
             </div>
             
@@ -269,7 +268,7 @@
                     if (msg.tunnel) updateTunnel(msg.tunnel);
                     $('serverType').value = config.serverType || 'vanilla';
                     updateVersions();
-                    $('version').value = config.version || '1.21.4';
+                    $('version').value = config.version;
                     if (msg.logs?.length) { $('console').textContent = msg.logs.join('\n'); $('console').scrollTop = $('console').scrollHeight; }
                 } else if (msg.type === 'status') updateUI(msg.status);
                 else if (msg.type === 'log') appendLog(msg.data);
@@ -320,7 +319,7 @@
         
         function updateVersions() {
             const type = $('serverType').value, cur = $('version').value;
-            const list = versions[type] || ['1.21.4'];
+            const list = versions[type] || [];
             $('version').innerHTML = list.map(v => `<option value="${v}">${v}</option>`).join('');
             if (list.includes(cur)) $('version').value = cur;
         }
@@ -335,7 +334,6 @@
         async function stopServer() { await fetch('/api/stop', { method: 'POST' }); }
         async function saveState() { const r = await fetch("/api/save-state", { method: "POST" }); const j = await r.json(); appendLog("[UI] " + (j.message || j.error)); }
         async function restartServer() { await fetch('/api/restart', { method: 'POST' }); }
-        async function saveState() { const r = await fetch("/api/save-state", { method: "POST" }); const j = await r.json(); if (j.success) appendLog("[UI] " + j.message); }
         async function applyConfig() { await fetch('/api/change', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ serverType: $('serverType').value, version: $('version').value }) }); }
         
         function sendCmd(cmd) {
