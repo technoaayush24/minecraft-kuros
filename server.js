@@ -128,8 +128,8 @@ async function loadVersions() {
         cachedVersions.vanilla = [...snapshot26, ...mojangVersions];
         manifest.versions.forEach(v => { if (v.type === 'release') vanillaManifest[v.id] = v.url; });
         
-        const paper = JSON.parse(execSync('wget -qO- "https://api.papermc.io/v2/projects/paper"', { timeout: 15000 }).toString());
-        if (paper.versions) cachedVersions.paper = paper.versions.reverse().slice(0, 30);
+        const paper = JSON.parse(execSync('wget -qO- "https://fill.papermc.io/v3/projects/paper"', { timeout: 15000 }).toString());
+        if (paper.versions) cachedVersions.paper = Object.values(paper.versions).flat().filter(v => !v.includes('-rc') && !v.includes('-pre')).slice(0, 30);
         
         const fabric = JSON.parse(execSync('wget -qO- "https://meta.fabricmc.net/v2/versions/game"', { timeout: 15000 }).toString());
         if (fabric) cachedVersions.fabric = fabric.filter(v => v.stable).map(v => v.version).slice(0, 30);
