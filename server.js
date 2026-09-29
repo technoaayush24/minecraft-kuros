@@ -86,7 +86,7 @@ function startAutoSave() {
 
 function getJavaVersion(mcVersion) {
     // MC 26.1+ needs Java 25
-    if (mcVersion.match(/^26\./)) return 25;
+    if (mcVersion.match(/^2[56]\./)) return 25;
     
     // Parse 1.x.x versions
     const match = mcVersion.match(/^1\.(\d+)(?:\.(\d+))?/);
@@ -113,7 +113,7 @@ function getJavaDir(mcVersion) { return `${JAVA_DIR}/jre${getJavaVersion(mcVersi
 
 const ALL_VERSIONS = {
     vanilla: ['26.3', '26.2', '26.1', '26.0', '25.1', '25.0', '1.21.4', '1.21.3', '1.21.1', '1.21', '1.20.6', '1.20.4', '1.20.1', '1.19.4', '1.18.2', '1.16.5', '1.12.2', '1.8.9'],
-    paper: ['1.21.4', '1.21.3', '1.21.1', '1.21', '1.20.6', '1.20.4', '1.20.1', '1.19.4', '1.18.2', '1.16.5'],
+    paper: ['26.2', '26.1', '26.0', '25.1', '25.0'],
     fabric: ['1.21.4', '1.21.3', '1.21.1', '1.21', '1.20.6', '1.20.4', '1.20.1', '1.19.4', '1.18.2']
 };
 
