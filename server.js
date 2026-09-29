@@ -34,12 +34,14 @@ function ensureDirs() {
 }
 
 function getJavaVersion(mcVersion) {
-    // New MC versions (26.x, 25.x, etc.) need Java 21
-    if (mcVersion.match(/^2[0-9]\./)) return 21;
+    // New MC versions (26.x+) need Java 25
+    if (mcVersion.match(/^2[6-9]\./)) return 25;
+    // MC 25.x needs Java 21
+    if (mcVersion.match(/^25\./)) return 21;
     
     // Parse old-style version like "1.21.4" or "1.20.1"
     const match = mcVersion.match(/^1\.(\d+)(?:\.(\d+))?/);
-    if (!match) return 21; // Default to Java 21 for safety
+    if (!match) return 21;
     const minor = parseInt(match[1]) || 0;
     const patch = parseInt(match[2]) || 0;
     if (minor >= 21) return 21;
@@ -171,9 +173,10 @@ async function installJava(version) {
     const urls = {
         8: 'https://github.com/adoptium/temurin8-binaries/releases/download/jdk8u422-b05/OpenJDK8U-jre_x64_alpine-linux_hotspot_8u422b05.tar.gz',
         17: 'https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.12%2B7/OpenJDK17U-jre_x64_alpine-linux_hotspot_17.0.12_7.tar.gz',
-        21: 'https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.4%2B7/OpenJDK21U-jre_x64_alpine-linux_hotspot_21.0.4_7.tar.gz'
+        21: 'https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.4%2B7/OpenJDK21U-jre_x64_alpine-linux_hotspot_21.0.4_7.tar.gz',
+        25: 'https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.4.1%2B1/OpenJDK25U-jre_x64_alpine-linux_hotspot_25.0.4.1_1.tar.gz'
     };
-    const extractDirs = { 8: 'jdk8u422-b05-jre', 17: 'jdk-17.0.12+7-jre', 21: 'jdk-21.0.4+7-jre' };
+    const extractDirs = { 8: 'jdk8u422-b05-jre', 17: 'jdk-17.0.12+7-jre', 21: 'jdk-21.0.4+7-jre', 25: 'jdk-25.0.4.1+1-jre' };
     const dir = `${JAVA_DIR}/jre${version}`;
     if (fs.existsSync(dir + '/bin/java')) return true;
     log(`Installing Java ${version}...`);
