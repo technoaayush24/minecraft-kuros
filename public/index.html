@@ -558,8 +558,14 @@
         
         // Init on page load
         (function init() {
-            try { updateVersions(); } catch(e) { console.error('updateVersions error:', e); }
-            try { connect(); } catch(e) { console.error('connect error:', e); }
+            $('console').textContent = 'Connecting...\n';
+            try { updateVersions(); } catch(e) { $('console').textContent += 'Version error: ' + e.message + '\n'; }
+            try { 
+                connect(); 
+                $('console').textContent += 'WebSocket connecting...\n';
+            } catch(e) { 
+                $('console').textContent += 'Connect error: ' + e.message + '\n'; 
+            }
         })();
     </script>
 
