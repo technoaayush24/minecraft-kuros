@@ -423,8 +423,9 @@
         
         async function removePlugin(name, type) {
             showModal('Remove Plugin', 'Remove ' + name + '?', 'Remove', async () => {
-            await fetch('/api/plugins/remove', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, type }) });
-            loadPlugins();
+                await fetch('/api/plugins/remove', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, type }) });
+                loadPlugins();
+            });
         }
         
         // World
