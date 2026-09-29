@@ -532,11 +532,9 @@
             } else $('uptime').textContent = '--';
         }, 1000);
         
-        // Initialize on DOM ready
-        document.addEventListener('DOMContentLoaded', () => {
-            updateVersions();
-            connect();
-        });
+        // DOM is ready since script is at end of body
+        updateVersions();
+        connect();
     </script>
 
     <div class="modal-overlay" id="modal">
