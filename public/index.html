@@ -4,51 +4,168 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>MC Server</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        :root { --bg: #0f0f0f; --surface: #1a1a1a; --border: #333; --text: #eee; --text2: #888; --green: #22c55e; --red: #ef4444; --blue: #3b82f6; }
-        body { font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
-        .container { max-width: 900px; margin: 0 auto; padding: 20px; }
-        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
-        .header h1 { font-size: 24px; }
-        .status { padding: 4px 12px; border-radius: 20px; font-size: 12px; }
-        .status.stopped { background: var(--red); }
-        .status.running { background: var(--green); color: #000; }
-        .status.starting, .status.downloading, .status.installing { background: var(--blue); }
-        .card { background: var(--surface); border-radius: 12px; padding: 16px; margin-bottom: 16px; }
-        .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
-        select, button, input { padding: 8px 16px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 14px; }
-        button { cursor: pointer; }
-        button:hover { opacity: 0.9; }
-        button:disabled { opacity: 0.5; cursor: not-allowed; }
-        .btn-green { background: var(--green); color: #000; border: none; }
-        .btn-red { background: var(--red); border: none; }
-        .btn-blue { background: var(--blue); border: none; }
-        .console { background: #000; border-radius: 8px; padding: 12px; height: 400px; overflow-y: auto; font-family: monospace; font-size: 13px; white-space: pre-wrap; }
-        .info { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 16px; }
-        .info-item { background: var(--bg); padding: 12px; border-radius: 8px; }
-        .info-label { font-size: 11px; color: var(--text2); margin-bottom: 4px; }
-        .info-value { font-size: 16px; font-weight: 600; }
-        .cmd-row { display: flex; gap: 8px; margin-top: 12px; }
-        .cmd-row input { flex: 1; }
-        .quick-btns { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 12px; }
-        .quick-btns button { padding: 6px 12px; font-size: 12px; background: var(--surface); }
+        :root { --bg: #0c0c0c; --surface: #161616; --surface2: #1e1e1e; --border: #2a2a2a; --text: #e4e4e4; --text2: #888; --accent: #22c55e; --accent2: #16a34a; --red: #ef4444; --yellow: #eab308; --blue: #3b82f6; }
+        html, body { height: 100%; overflow: hidden; }
+        body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); }
+        
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: var(--bg); border-radius: 4px; }
+        ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #444; }
+        * { scrollbar-width: thin; scrollbar-color: var(--border) var(--bg); }
+        
+        .layout { display: grid; grid-template-columns: 220px 1fr; height: 100vh; }
+        
+        .sidebar { background: var(--surface); border-right: 1px solid var(--border); padding: 16px; display: flex; flex-direction: column; gap: 12px; overflow-y: auto; }
+        .logo { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+        .logo-icon { width: 32px; height: 32px; background: linear-gradient(135deg, var(--accent), var(--blue)); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 16px; }
+        .logo h1 { font-size: 15px; font-weight: 600; }
+        
+        .card { background: var(--surface2); border-radius: 8px; padding: 12px; }
+        .card-title { font-size: 10px; color: var(--text2); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
+        
+        .status-badge { display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px; border-radius: 12px; font-size: 11px; font-weight: 500; }
+        .status-badge.running { background: rgba(34,197,94,0.15); color: var(--accent); }
+        .status-badge.stopped { background: rgba(136,136,136,0.15); color: var(--text2); }
+        .status-badge.starting, .status-badge.downloading, .status-badge.installing { background: rgba(234,179,8,0.15); color: var(--yellow); }
+        .status-badge.error { background: rgba(239,68,68,0.15); color: var(--red); }
+        
+        .stat-row { display: flex; justify-content: space-between; font-size: 11px; padding: 4px 0; }
+        .stat-label { color: var(--text2); }
+        
+        .claim-link { display:block; padding:10px; background:rgba(234,179,8,0.15); border:1px solid var(--yellow); border-radius:6px; color:var(--yellow); font-size:12px; text-align:center; text-decoration:none; font-weight:500; }
+        .claim-link:hover { background:rgba(234,179,8,0.25); }
+        .tunnel-address { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--accent); background: rgba(0,0,0,0.3); padding: 8px; border-radius: 4px; cursor: pointer; text-align: center; margin-top: 6px; }
+        
+        .player-list { font-size: 11px; color: var(--text2); }
+        
+        .main { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+        
+        .topbar { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid var(--border); background: var(--surface); }
+        .server-title { font-size: 14px; font-weight: 600; }
+        .actions { display: flex; gap: 6px; }
+        
+        .btn { padding: 6px 12px; border-radius: 5px; font-size: 11px; font-weight: 500; cursor: pointer; border: none; transition: all 0.15s; }
+        .btn-primary { background: var(--accent); color: #000; }
+        .btn-secondary { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
+        .btn-danger { background: rgba(239,68,68,0.1); color: var(--red); }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .btn-sm { padding: 4px 8px; font-size: 10px; }
+        
+        .config-row { display: flex; gap: 8px; padding: 8px 16px; border-bottom: 1px solid var(--border); align-items: center; background: var(--surface2); }
+        .config-row select { padding: 6px 8px; background: var(--surface); border: 1px solid var(--border); border-radius: 4px; color: var(--text); font-size: 12px; }
+        .config-row label { font-size: 11px; color: var(--text2); }
+        
+        .tabs { display: flex; border-bottom: 1px solid var(--border); background: var(--surface); }
+        .tab { padding: 10px 16px; font-size: 12px; cursor: pointer; border-bottom: 2px solid transparent; color: var(--text2); }
+        .tab.active { color: var(--accent); border-color: var(--accent); }
+        .tab:hover { color: var(--text); }
+        
+        .tab-content { flex: 1; display: none; flex-direction: column; overflow: hidden; }
+        .tab-content.active { display: flex; }
+        
+        .console { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+        .console-output { flex: 1; padding: 10px; font-family: 'JetBrains Mono', monospace; font-size: 11px; line-height: 1.5; overflow-y: auto; background: #0a0a0a; color: #888; white-space: pre-wrap; word-break: break-all; }
+        .console-input { display: flex; border-top: 1px solid var(--border); }
+        .console-input input { flex: 1; padding: 10px; background: var(--surface2); border: none; color: var(--text); font-family: 'JetBrains Mono', monospace; font-size: 11px; }
+        .console-input button { padding: 0 14px; background: var(--accent); color: #000; border: none; font-size: 11px; cursor: pointer; }
+        
+        .quick-cmds { display: flex; gap: 4px; padding: 8px; border-top: 1px solid var(--border); flex-wrap: wrap; background: var(--surface2); }
+        .quick-cmd { padding: 4px 8px; background: var(--surface); border: 1px solid var(--border); border-radius: 3px; color: var(--text2); font-size: 10px; cursor: pointer; font-family: 'JetBrains Mono', monospace; }
+        .quick-cmd:hover { border-color: var(--accent); }
+        
+        .file-browser { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+        .file-path { padding: 8px 12px; background: var(--surface2); border-bottom: 1px solid var(--border); font-size: 11px; font-family: 'JetBrains Mono', monospace; }
+        .file-list { flex: 1; overflow-y: auto; }
+        .file-item { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--border); cursor: pointer; font-size: 12px; }
+        .file-item:hover { background: var(--surface2); }
+        .file-item.dir { color: var(--blue); }
+        .file-icon { width: 16px; text-align: center; }
+        .file-name { flex: 1; }
+        .file-size { color: var(--text2); font-size: 10px; }
+        
+        .editor { flex: 1; display: flex; flex-direction: column; }
+        .editor-header { display: flex; justify-content: space-between; padding: 8px 12px; background: var(--surface2); border-bottom: 1px solid var(--border); }
+        .editor-path { font-size: 11px; font-family: 'JetBrains Mono', monospace; }
+        .editor-content { flex: 1; }
+        .editor-content textarea { width: 100%; height: 100%; background: #0a0a0a; color: var(--text); border: none; padding: 12px; font-family: 'JetBrains Mono', monospace; font-size: 11px; resize: none; }
+        
+        .plugins-list { padding: 12px; }
+        .plugin-item { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: var(--surface2); border-radius: 6px; margin-bottom: 6px; }
+        .plugin-name { font-size: 12px; }
+        .plugin-actions { display: flex; gap: 4px; }
+        
+        .world-section { padding: 12px; }
+        .world-card { background: var(--surface2); border-radius: 8px; padding: 12px; margin-bottom: 12px; }
+        .world-title { font-size: 12px; font-weight: 500; margin-bottom: 8px; }
+        .backup-item { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 11px; }
+        
+        .input-row { display: flex; gap: 6px; margin-top: 8px; }
+        .input-row input { flex: 1; padding: 6px 8px; background: var(--surface); border: 1px solid var(--border); border-radius: 4px; color: var(--text); font-size: 11px; }
+        
+        
+        /* Modal */
+        .modal-overlay { position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.7); display:none; align-items:center; justify-content:center; z-index:1000; }
+        .modal-overlay.show { display:flex; }
+        .modal { background:var(--surface); border-radius:12px; padding:20px; max-width:400px; width:90%; }
+        .modal-title { font-size:14px; font-weight:600; margin-bottom:12px; }
+        .modal-text { font-size:12px; color:var(--text2); margin-bottom:16px; }
+        .modal-btns { display:flex; gap:8px; justify-content:flex-end; }
+        .toast { position:fixed; bottom:20px; right:20px; padding:12px 20px; border-radius:8px; font-size:12px; z-index:1001; animation:slideIn 0.3s; }
+        .toast.success { background:var(--accent); color:#000; }
+        .toast.error { background:var(--red); color:#fff; }
+        .toast.info { background:var(--blue); color:#fff; }
+        @keyframes slideIn { from { transform:translateX(100%); opacity:0; } to { transform:translateX(0); opacity:1; } }
+
+        @media (max-width: 768px) { .layout { grid-template-columns: 1fr; } .sidebar { display: none; } }
     </style>
 </head>
 <body>
-    <div class="container">
-        <div class="header">
-            <h1>⬛ MC Server</h1>
-            <span class="status stopped" id="status">Stopped</span>
-        </div>
+    <div class="layout">
+        <aside class="sidebar">
+            <div class="logo"><div class="logo-icon">⛏</div><h1>MC Server</h1></div>
+            
+            <div class="card">
+                <div class="card-title">Status</div>
+                <div class="stat-row"><span class="stat-label">Server</span><span class="status-badge stopped" id="statusBadge"><span id="statusText">Stopped</span></span></div>
+                <div class="stat-row"><span class="stat-label">Uptime</span><span id="uptime">--</span></div>
+                <div class="stat-row"><span class="stat-label">Players</span><span id="playerCount">0</span></div>
+            </div>
+            
+            <div class="card">
+                <div class="card-title">Connect</div>
+                <div id="tunnelContent"><span style="font-size:11px;color:var(--text2)">Loading...</span></div>
+                <button class="btn btn-sm btn-secondary" id="tunnelBtn" onclick="startTunnel()" style="margin-top:8px;width:100%">Start Tunnel</button>
+            </div>
+            
+            <div class="card">
+                <div class="card-title">Players</div>
+                <div class="player-list" id="playerList">No players</div>
+            </div>
+        </aside>
         
-        <div class="card">
-            <div class="row">
-                <select id="serverType">
+        <main class="main">
+            <div class="topbar">
+                <span class="server-title" id="serverTitle">Minecraft Server</span>
+                <div class="actions">
+                    <button class="btn btn-primary" id="startBtn" onclick="startServer()">▶ Start</button>
+                    <button class="btn btn-secondary" id="restartBtn" onclick="restartServer()" disabled>↻</button>
+                    <button class="btn btn-danger" id="stopBtn" onclick="stopServer()" disabled>■</button>
+                </div>
+            </div>
+            
+            <div class="config-row">
+                <label>Type</label>
+                <select id="serverType" onchange="updateVersions()">
                     <option value="vanilla">Vanilla</option>
                     <option value="paper">Paper</option>
                     <option value="fabric">Fabric</option>
                 </select>
+                <label>Version</label>
                 <select id="version">
                     <option value="26.3">26.3</option>
                     <option value="26.2">26.2</option>
@@ -69,123 +186,400 @@
                     <option value="1.12.2">1.12.2</option>
                     <option value="1.8.9">1.8.9</option>
                 </select>
-                <button class="btn-green" id="startBtn" onclick="startServer()">▶ Start</button>
-                <button class="btn-red" id="stopBtn" onclick="stopServer()" disabled>■ Stop</button>
-                <button class="btn-blue" id="tunnelBtn" onclick="toggleTunnel()">🌐 Tunnel</button>
+                <button class="btn btn-secondary btn-sm" onclick="applyConfig()">Apply</button>
             </div>
-        </div>
-        
-        <div class="info">
-            <div class="info-item">
-                <div class="info-label">Players</div>
-                <div class="info-value" id="players">0</div>
+            
+            <div class="tabs">
+                <div class="tab active" onclick="showTab('console')">Console</div>
+                <div class="tab" onclick="showTab('files')">Files</div>
+                <div class="tab" onclick="showTab('plugins')">Plugins</div>
+                <div class="tab" onclick="showTab('world')">World</div>
             </div>
-            <div class="info-item">
-                <div class="info-label">Address</div>
-                <div class="info-value" id="address">-</div>
+            
+            <!-- Console Tab -->
+            <div class="tab-content active" id="tab-console">
+                <div class="console">
+                    <div class="console-output" id="console">Waiting...</div>
+                    <div class="quick-cmds">
+                        <button class="quick-cmd" onclick="sendCmd('list')">list</button>
+                        <button class="quick-cmd" onclick="sendCmd('tps')">tps</button>
+                        <button class="quick-cmd" onclick="sendCmd('time set day')">day</button>
+                        <button class="quick-cmd" onclick="sendCmd('weather clear')">clear</button>
+                        <button class="quick-cmd" onclick="sendCmd('gamemode creative @a')">creative</button>
+                        <button class="quick-cmd" onclick="sendCmd('gamemode survival @a')">survival</button>
+                        <button class="quick-cmd" onclick="sendCmd('save-all')">save</button>
+                    </div>
+                    <div class="console-input">
+                        <input type="text" id="cmdInput" placeholder="Command..." autocomplete="off">
+                        <button onclick="sendCmd()">Send</button>
+                    </div>
+                </div>
             </div>
-        </div>
-        
-        <div class="card">
-            <div class="console" id="console">Connecting...</div>
-            <div class="cmd-row">
-                <input type="text" id="cmdInput" placeholder="Enter command..." onkeypress="if(event.key==='Enter')sendCmd()">
-                <button onclick="sendCmd()">Send</button>
+            
+            <!-- Files Tab -->
+            <div class="tab-content" id="tab-files">
+                <div class="file-browser" id="fileBrowser">
+                    <div class="file-path"><span id="currentPath">/</span></div>
+                    <div class="file-list" id="fileList"></div>
+                </div>
+                <div class="editor" id="fileEditor" style="display:none">
+                    <div class="editor-header">
+                        <span class="editor-path" id="editorPath"></span>
+                        <div><button class="btn btn-sm btn-secondary" onclick="closeEditor()">Cancel</button> <button class="btn btn-sm btn-primary" onclick="saveFile()">Save</button></div>
+                    </div>
+                    <div class="editor-content"><textarea id="editorContent"></textarea></div>
+                </div>
             </div>
-            <div class="quick-btns">
-                <button onclick="sendCmd('list')">list</button>
-                <button onclick="sendCmd('tps')">tps</button>
-                <button onclick="sendCmd('time set day')">day</button>
-                <button onclick="sendCmd('weather clear')">clear</button>
-                <button onclick="sendCmd('gamemode creative @a')">creative</button>
-                <button onclick="sendCmd('gamemode survival @a')">survival</button>
+            
+            <!-- Plugins Tab -->
+            <div class="tab-content" id="tab-plugins">
+                <div class="plugins-list">
+                    <div class="world-card">
+                        <div class="world-title">Install Plugin/Mod</div>
+                        <div class="input-row">
+                            <input type="text" id="pluginUrl" placeholder="Direct download URL (.jar)">
+                            <select id="pluginType"><option value="plugin">Plugin</option><option value="mod">Mod</option></select>
+                            <button class="btn btn-sm btn-primary" onclick="installPlugin()">Install</button>
+                        </div>
+                        <p style="font-size:10px;color:var(--text2);margin-top:6px">Paste direct .jar URL from Modrinth, Spigot, CurseForge, etc.</p>
+                    </div>
+                    <div class="world-card">
+                        <div class="world-title">Installed Plugins</div>
+                        <div id="pluginsList"></div>
+                    </div>
+                    <div class="world-card">
+                        <div class="world-title">Installed Mods</div>
+                        <div id="modsList"></div>
+                    </div>
+                </div>
             </div>
-        </div>
+            
+            <!-- World Tab -->
+            <div class="tab-content" id="tab-world">
+                <div class="world-section">
+                    <div class="world-card">
+                        <div class="world-title">World Management</div>
+                        <div style="display:flex;gap:8px">
+                            <button class="btn btn-secondary" onclick="backupWorld()">📦 Backup World</button>
+                            <button class="btn btn-danger" onclick="resetWorld()">🗑️ Reset World</button>
+                        </div>
+                        <p style="font-size:10px;color:var(--text2);margin-top:8px">Reset deletes the world. A new one generates on restart.</p>
+                    </div>
+                    <div class="world-card">
+                        <div class="world-title">Local Backups</div>
+                        <div id="backupsList"></div>
+                    </div>
+                    <div class="world-card">
+                        <div class="world-title">☁️ Cloud Backups (Pixxo)</div>
+                        <button class="btn btn-primary btn-sm" onclick="cloudBackup()" style="margin-bottom:8px">Upload to Cloud</button>
+                        <div id="cloudBackupsList"></div>
+                    </div>
+                </div>
+            </div>
+        </main>
     </div>
     
     <script>
-        let ws, status = 'stopped', tunnelStatus = 'stopped';
         const $ = id => document.getElementById(id);
+        let ws, config = {}, status = 'stopped', startTime, versions = {
+            vanilla: ['26.3', '26.2', '26.1', '26.0', '25.1', '25.0', '1.21.4', '1.21.3', '1.21.1', '1.21', '1.20.6', '1.20.4', '1.20.1', '1.19.4', '1.18.2', '1.16.5', '1.12.2', '1.8.9'],
+            paper: ['1.21.4', '1.21.3', '1.21.1', '1.21', '1.20.6', '1.20.4', '1.20.1', '1.19.4', '1.18.2', '1.16.5'],
+            fabric: ['1.21.4', '1.21.3', '1.21.1', '1.21', '1.20.6', '1.20.4', '1.20.1', '1.19.4', '1.18.2']
+        };
+        let currentPath = '', editingFile = null;
+        
+        function showTab(name) {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+            document.querySelector(`.tab-content#tab-${name}`).classList.add('active');
+            document.querySelector(`.tab[onclick="showTab('${name}')"]`).classList.add('active');
+            if (name === 'files') loadFiles();
+            if (name === 'plugins') loadPlugins();
+            if (name === 'world') { loadBackups(); loadCloudBackups(); }
+        }
         
         function connect() {
-            ws = new WebSocket((location.protocol === 'https:' ? 'wss:' : 'ws:') + '//' + location.host + '/ws');
-            ws.onopen = () => { $('console').textContent = 'Connected to server\n'; };
-            ws.onmessage = e => {
+            const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+            ws = new WebSocket(proto + '//' + location.host + '/ws');
+            ws.onmessage = (e) => {
                 const msg = JSON.parse(e.data);
                 if (msg.type === 'init') {
-                    status = msg.status;
-                    tunnelStatus = msg.tunnel?.status || 'stopped';
-                    updateUI();
-                    $('serverType').value = msg.config?.serverType || 'vanilla';
-                    $('version').value = msg.config?.version || '1.21.4';
-                    $('players').textContent = msg.players?.length || 0;
-                    if (msg.tunnel?.address) $('address').textContent = msg.tunnel.address;
-                    if (msg.logs?.length) $('console').textContent = msg.logs.join('\n') + '\n';
-                    if (msg.versions) updateVersions(msg.versions);
-                } else if (msg.type === 'status') {
-                    status = msg.status;
-                    updateUI();
-                } else if (msg.type === 'log') {
-                    $('console').textContent += msg.data + '\n';
-                    $('console').scrollTop = $('console').scrollHeight;
-                } else if (msg.type === 'players') {
-                    $('players').textContent = msg.players?.length || 0;
-                } else if (msg.type === 'tunnel') {
-                    tunnelStatus = msg.status;
-                    $('address').textContent = msg.address || '-';
-                    $('tunnelBtn').textContent = msg.status === 'connected' ? '🌐 Stop Tunnel' : '🌐 Tunnel';
-                }
+                    config = msg.config || {}; if (msg.versions && Object.keys(msg.versions).length) versions = msg.versions;
+                    updateUI(msg.status); updatePlayers(msg.players || []);
+                    if (msg.tunnel) updateTunnel(msg.tunnel);
+                    $('serverType').value = config.serverType || 'vanilla';
+                    // Set server type first
+                    $('serverType').value = config.serverType || 'vanilla';
+                    // Then load versions for that type
+                    updateVersions();
+                    // Then set the saved version
+                    setTimeout(() => {
+                        $('version').value = config.version || '1.21.4';
+                    }, 100);
+                    if (msg.logs?.length) { $('console').textContent = msg.logs.join('\n'); $('console').scrollTop = $('console').scrollHeight; }
+                } else if (msg.type === 'status') updateUI(msg.status);
+                else if (msg.type === 'log') appendLog(msg.data);
+                else if (msg.type === 'players') updatePlayers(msg.players || []);
+                else if (msg.type === 'tunnel') updateTunnel(msg);
             };
             ws.onclose = () => setTimeout(connect, 2000);
         }
         
-        function updateUI() {
-            $('status').textContent = status.charAt(0).toUpperCase() + status.slice(1);
-            $('status').className = 'status ' + status;
+        function updateUI(s) {
+            status = s;
+            $('statusBadge').className = 'status-badge ' + status;
+            const labels = { stopped: 'Stopped', starting: 'Starting', running: 'Running', stopping: 'Stopping', downloading: 'Downloading', installing: 'Installing', error: 'Error' };
+            $('statusText').textContent = labels[status] || status;
             $('startBtn').disabled = !['stopped', 'error'].includes(status);
             $('stopBtn').disabled = status !== 'running';
+            $('restartBtn').disabled = status !== 'running';
+            const types = { vanilla: 'Vanilla', paper: 'Paper', fabric: 'Fabric' };
+            $('serverTitle').textContent = (types[config.serverType] || 'MC') + ' ' + (config.version || '');
+            if (status === 'running' && !startTime) startTime = Date.now();
+            if (status === 'stopped') startTime = null;
         }
         
-        function updateVersions(versions) {
-            const type = $('serverType').value;
-            const cur = $('version').value;
-            const list = versions[type] || [];
-            if (list.length) {
-                $('version').innerHTML = list.map(v => `<option value="${v}">${v}</option>`).join('');
-                $('version').value = list.includes(cur) ? cur : list[0];
+        function updatePlayers(list) {
+            $('playerCount').textContent = list.length;
+            $('playerList').innerHTML = list.length ? list.map(p => `<div style="font-size:11px">${p}</div>`).join('') : '<span style="color:var(--text2)">No players</span>';
+        }
+        
+        function updateTunnel(t) {
+            const btn = $('tunnelBtn');
+            if (t.status === 'connected' && t.address) {
+                $('tunnelContent').innerHTML = `<div class="tunnel-address" onclick="navigator.clipboard.writeText('${t.address}');this.textContent='Copied!';setTimeout(()=>this.textContent='${t.address}',1000)">${t.address}</div><div style="font-size:9px;color:var(--text2);margin-top:4px;text-align:center">Click to copy</div>`;
+                btn.style.display = 'none';
+            } else if (t.status === 'starting') {
+                $('tunnelContent').innerHTML = `<span style="font-size:11px;color:var(--yellow)">⏳ Starting...</span>`;
+                btn.disabled = true;
+            } else {
+                $('tunnelContent').innerHTML = `<span style="font-size:11px;color:var(--text2)">Not connected</span>`;
+                btn.style.display = 'block';
+                btn.disabled = false;
+                btn.textContent = 'Start Tunnel';
             }
         }
         
-        async function startServer() {
-            $('console').textContent = 'Starting server...\n';
-            await fetch('/api/change', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ serverType: $('serverType').value, version: $('version').value }) });
-            await fetch('/api/start', { method: 'POST' });
+        async function startTunnel() {
+            await fetch('/api/tunnel/start', { method: 'POST' });
         }
         
-        async function stopServer() {
-            await fetch('/api/stop', { method: 'POST' });
+        function updateVersions() {
+            const type = $('serverType').value, cur = $('version').value;
+            const list = versions[type] || ['1.21.4'];
+            $('version').innerHTML = list.map(v => `<option value="${v}">${v}</option>`).join('');
+            if (list.includes(cur)) $('version').value = cur;
         }
+        
+        function appendLog(t) {
+            const c = $('console'), lines = c.textContent.split('\n');
+            if (lines.length > 400) c.textContent = lines.slice(-300).join('\n');
+            c.textContent += t + '\n'; c.scrollTop = c.scrollHeight;
+        }
+        
+        async function startServer() { 
+            // Apply selected version first
+            await fetch('/api/change', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ serverType: $('serverType').value, version: $('version').value }) });
+            // Then start
+            await fetch('/api/start', { method: 'POST' }); 
+        }
+        async function stopServer() { await fetch('/api/stop', { method: 'POST' }); }
+        async function restartServer() { await fetch('/api/restart', { method: 'POST' }); }
+        async function applyConfig() { await fetch('/api/change', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ serverType: $('serverType').value, version: $('version').value }) }); }
         
         function sendCmd(cmd) {
             cmd = cmd || $('cmdInput').value.trim();
             if (!cmd) return;
-            fetch('/api/command', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ command: cmd }) });
+            fetch('/api/command', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cmd }) });
             $('cmdInput').value = '';
         }
+        $('cmdInput').addEventListener('keydown', e => { if (e.key === 'Enter') sendCmd(); });
         
-        async function toggleTunnel() {
-            if (tunnelStatus === 'connected') {
-                await fetch('/api/tunnel/stop', { method: 'POST' });
-            } else {
-                await fetch('/api/tunnel/start', { method: 'POST' });
-            }
+        // Files
+        async function loadFiles(path = '') {
+            currentPath = path;
+            const res = await fetch('/api/files?path=' + encodeURIComponent(path)).then(r => r.json());
+            if (res.error) return;
+            $('currentPath').textContent = '/' + path;
+            let html = '';
+            if (path) html += `<div class="file-item dir" onclick="loadFiles('${path.split('/').slice(0,-1).join('/')}')"><span class="file-icon">📁</span><span class="file-name">..</span></div>`;
+            res.items.forEach(f => {
+                if (f.isDir) {
+                    html += `<div class="file-item dir" onclick="loadFiles('${f.path}')"><span class="file-icon">📁</span><span class="file-name">${f.name}</span></div>`;
+                } else {
+                    html += `<div class="file-item" onclick="openFile('${f.path}')"><span class="file-icon">📄</span><span class="file-name">${f.name}</span><span class="file-size">${formatSize(f.size)}</span></div>`;
+                }
+            });
+            $('fileList').innerHTML = html || '<div style="padding:12px;color:var(--text2)">Empty</div>';
+            $('fileBrowser').style.display = 'flex';
+            $('fileEditor').style.display = 'none';
         }
         
-        $('serverType').onchange = () => {
-            fetch('/api/versions').then(r => r.json()).then(updateVersions);
-        };
+        async function openFile(path) {
+            const res = await fetch('/api/files/read?path=' + encodeURIComponent(path)).then(r => r.json());
+            if (res.error) return alert(res.error);
+            editingFile = path;
+            $('editorPath').textContent = path;
+            $('editorContent').value = res.content;
+            $('fileBrowser').style.display = 'none';
+            $('fileEditor').style.display = 'flex';
+        }
         
-        connect();
+        function closeEditor() { editingFile = null; loadFiles(currentPath); }
+        
+        async function saveFile() {
+            await fetch('/api/files/write', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: editingFile, content: $('editorContent').value }) });
+            closeEditor();
+        }
+        
+        function formatSize(b) { return b < 1024 ? b + 'B' : b < 1048576 ? (b/1024).toFixed(1) + 'K' : (b/1048576).toFixed(1) + 'M'; }
+        
+        // Plugins
+        async function loadPlugins() {
+            const res = await fetch('/api/plugins').then(r => r.json());
+            $('pluginsList').innerHTML = res.plugins.length ? res.plugins.map(p => `<div class="plugin-item"><span class="plugin-name">${p}</span><button class="btn btn-sm btn-danger" onclick="removePlugin('${p}','plugin')">Remove</button></div>`).join('') : '<div style="color:var(--text2);font-size:11px">No plugins</div>';
+            $('modsList').innerHTML = res.mods.length ? res.mods.map(m => `<div class="plugin-item"><span class="plugin-name">${m}</span><button class="btn btn-sm btn-danger" onclick="removePlugin('${m}','mod')">Remove</button></div>`).join('') : '<div style="color:var(--text2);font-size:11px">No mods</div>';
+        }
+        
+        async function installPlugin() {
+            const url = $('pluginUrl').value.trim(), type = $('pluginType').value;
+            if (!url) return;
+            await fetch('/api/plugins/install', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url, type }) });
+            $('pluginUrl').value = '';
+            loadPlugins();
+        }
+        
+        async function removePlugin(name, type) {
+            showModal('Remove Plugin', 'Remove ' + name + '?', 'Remove', async () => {
+                await fetch('/api/plugins/remove', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, type }) });
+                loadPlugins();
+            });
+        }
+        
+        // World
+        async function loadBackups() {
+            const res = await fetch('/api/world/backups').then(r => r.json());
+            $('backupsList').innerHTML = res.length ? res.map(b => `<div class="backup-item"><span>${b.name}</span><div><button class="btn btn-sm btn-secondary" onclick="restoreBackup('${b.name}')">Restore</button> <button class="btn btn-sm btn-danger" onclick="deleteBackup('${b.name}')">Delete</button></div></div>`).join('') : '<div style="color:var(--text2);font-size:11px">No backups</div>';
+        }
+        
+        async function backupWorld() {
+            const res = await fetch('/api/world/backup', { method: 'POST' }).then(r => r.json());
+            if (res.error) alert(res.error);
+            loadBackups();
+        }
+        
+        async function resetWorld() {
+            showModal('⚠️ Reset World', 'Delete world permanently? This cannot be undone!', 'Delete', async () => {
+            await fetch('/api/world/reset', { method: 'POST' }); toast('World reset', 'success'); loadBackups(); }); return
+        }
+        
+        async function restoreBackup(name) {
+            if (status === 'running') return alert('Stop server first');
+            if (!confirm('Restore ' + name + '?')) return;
+            await fetch('/api/world/restore', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) });
+        }
+        
+        async function deleteBackup(name) {
+            if (!confirm('Delete backup ' + name + '?')) return;
+            await fetch('/api/world/delete-backup', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) });
+            loadBackups();
+        }
+        
+        // Modal & Toast
+        let modalCallback = null;
+        function showModal(title, text, confirmText, callback) {
+            $('modalTitle').textContent = title;
+            $('modalText').textContent = text;
+            $('modalConfirm').textContent = confirmText || 'Confirm';
+            $('modalConfirm').className = confirmText === 'Delete' ? 'btn btn-danger' : 'btn btn-primary';
+            modalCallback = callback;
+            $('modal').classList.add('show');
+        }
+        function closeModal() { $('modal').classList.remove('show'); modalCallback = null; }
+        $('modalConfirm').onclick = () => { if(modalCallback) modalCallback(); closeModal(); };
+        
+        function toast(msg, type='info') {
+            const t = document.createElement('div');
+            t.className = 'toast ' + type;
+            t.textContent = msg;
+            document.getElementById('toastContainer').appendChild(t);
+            setTimeout(() => t.remove(), 3000);
+        }
+        
+        async function cloudBackup() {
+            showModal('☁️ Cloud Backup', 'Upload current world to Pixxo cloud?', 'Upload', async () => {
+                toast('Uploading...', 'info');
+                const res = await fetch('/api/cloud/backup', { method: 'POST' }).then(r=>r.json());
+                if (res.error) toast('Failed: ' + res.error, 'error');
+                else toast('Backup uploaded!', 'success');
+                loadCloudBackups();
+            });
+        }
+        
+        async function loadCloudBackups() {
+            const res = await fetch('/api/cloud/list').then(r=>r.json());
+            if (!res || !res.length) {
+                $('cloudBackupsList').innerHTML = '<div style="color:var(--text2);font-size:11px">No cloud backups yet</div>';
+                return;
+            }
+            $('cloudBackupsList').innerHTML = res.map(b => {
+                const info = b.snapshot ? `${b.snapshot.serverType} ${b.snapshot.version}` : b.name;
+                const date = b.uploadedAt ? new Date(b.uploadedAt).toLocaleDateString() : '';
+                return `<div class="backup-item"><div><div style="font-size:11px">${info}</div><div style="font-size:9px;color:var(--text2)">${date}</div></div><div><button class="btn btn-sm btn-secondary" onclick="restoreCloud('${b.fileId}','${info}')">Restore</button> <button class="btn btn-sm btn-danger" onclick="deleteCloud('${b.fileId}')">×</button></div></div>`;
+            }).join('');
+        }
+        
+        async function restoreCloud(fileId, name) {
+            if (status === 'running') { toast('Stop server first!', 'error'); return; }
+            showModal('☁️ Restore Backup', `Restore "${name}"? Current world will be backed up locally first.`, 'Restore', async () => {
+                toast('Downloading...', 'info');
+                const res = await fetch('/api/cloud/restore', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({fileId}) }).then(r=>r.json());
+                if (res.error) toast('Failed: ' + res.error, 'error');
+                else toast('Restored! Start server to play.', 'success');
+                loadCloudBackups();
+                loadBackups();
+            });
+        }
+        
+        async function deleteCloud(fileId) {
+            showModal('Delete Backup', 'Delete this cloud backup permanently?', 'Delete', async () => {
+                await fetch('/api/cloud/delete', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({fileId}) });
+                toast('Deleted', 'success');
+                loadCloudBackups();
+            });
+        }
+        
+        setInterval(() => {
+            if (startTime) {
+                const s = Math.floor((Date.now() - startTime) / 1000);
+                $('uptime').textContent = s < 60 ? s + 's' : Math.floor(s/60) + 'm';
+            } else $('uptime').textContent = '--';
+        }, 1000);
+        
+        // Init on page load
+        (function init() {
+            $('console').textContent = 'Connecting...\n';
+            try { updateVersions(); } catch(e) { $('console').textContent += 'Version error: ' + e.message + '\n'; }
+            try { 
+                connect(); 
+                $('console').textContent += 'WebSocket connecting...\n';
+            } catch(e) { 
+                $('console').textContent += 'Connect error: ' + e.message + '\n'; 
+            }
+        })();
     </script>
+
+    <div class="modal-overlay" id="modal">
+        <div class="modal">
+            <div class="modal-title" id="modalTitle">Confirm</div>
+            <div class="modal-text" id="modalText">Are you sure?</div>
+            <div class="modal-btns">
+                <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+                <button class="btn btn-primary" id="modalConfirm">Confirm</button>
+            </div>
+        </div>
+    </div>
+    <div id="toastContainer"></div>
+
 </body>
 </html>
