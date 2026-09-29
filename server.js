@@ -18,14 +18,18 @@ const JAVA_DIR = DATA_DIR + '/java';
 const BACKUPS_DIR = DATA_DIR + '/backups';
 const CONFIG_FILE = DATA_DIR + '/config.json';
 const PLAYIT_DIR = DATA_DIR + '/playit';
+const SECRET_FILE = PLAYIT_DIR + '/playit.toml';
 
 let mcProcess = null;
 let playitProcess = null;
+let claimProcess = null;
 let logs = [];
 let status = 'stopped';
 let players = [];
 let tunnelAddress = null;
 let tunnelStatus = 'stopped';
+let claimCode = null;
+let claimUrl = null;
 let config = { serverType: 'vanilla', version: '1.21.4', port: 25565, autoStart: true };
 
 function ensureDirs() {
@@ -43,9 +47,7 @@ function getJavaVersion(mcVersion) {
     return 8;
 }
 
-function getJavaDir(mcVersion) {
-    return `${JAVA_DIR}/jre${getJavaVersion(mcVersion)}`;
-}
+function getJavaDir(mcVersion) { return `${JAVA_DIR}/jre${getJavaVersion(mcVersion)}`; }
 
 const ALL_VERSIONS = {
     vanilla: ['1.21.4', '1.21.3', '1.21.1', '1.21', '1.20.6', '1.20.4', '1.20.1', '1.19.4', '1.18.2', '1.16.5', '1.12.2', '1.8.9'],
@@ -63,22 +65,13 @@ async function loadVersions() {
         manifest.versions.forEach(v => { if (v.type === 'release') vanillaManifest[v.id] = v.url; });
         const paper = JSON.parse(execSync('wget -qO- "https://api.papermc.io/v2/projects/paper"', { timeout: 15000 }).toString());
         if (paper.versions) cachedVersions.paper = paper.versions.reverse().slice(0, 30);
-        log('Loaded versions');
-    } catch (e) { log('Using cached versions'); }
+    } catch (e) {}
 }
 
-function loadConfig() {
-    try { if (fs.existsSync(CONFIG_FILE)) config = { ...config, ...JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8')) }; } catch (e) {}
-}
+function loadConfig() { try { if (fs.existsSync(CONFIG_FILE)) config = { ...config, ...JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8')) }; } catch (e) {} }
+function saveConfig() { ensureDirs(); fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2)); }
 
-function saveConfig() {
-    ensureDirs();
-    fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2));
-}
-
-function broadcast(data) {
-    wss.clients.forEach(c => c.readyState === WebSocket.OPEN && c.send(JSON.stringify(data)));
-}
+function broadcast(data) { wss.clients.forEach(c => c.readyState === WebSocket.OPEN && c.send(JSON.stringify(data))); }
 
 function log(msg) {
     const line = `[${new Date().toLocaleTimeString()}] ${msg}`;
@@ -91,15 +84,16 @@ function log(msg) {
 // ==================== PLAYIT TUNNEL ====================
 async function installPlayit() {
     const playitBin = PLAYIT_DIR + '/playit';
-    if (fs.existsSync(playitBin)) {
-        return true;
-    }
+    const playitCli = PLAYIT_DIR + '/playit-cli';
+    
+    if (fs.existsSync(playitBin) && fs.existsSync(playitCli)) return true;
+    
     log('Installing playit.gg...');
     try {
         ensureDirs();
-        // Use the musl/static build for Alpine Linux
         execSync(`wget -q -O ${playitBin} "https://builds.playit.gg/1.0.10/playit-linux-amd64"`, { timeout: 120000 });
-        execSync(`chmod +x ${playitBin}`);
+        execSync(`wget -q -O ${playitCli} "https://builds.playit.gg/1.0.10/playit-cli-linux-amd64"`, { timeout: 120000 });
+        execSync(`chmod +x ${playitBin} ${playitCli}`);
         log('playit.gg installed');
         return true;
     } catch (e) { 
@@ -109,87 +103,121 @@ async function installPlayit() {
 }
 
 async function startTunnel() {
-    if (playitProcess) {
+    if (playitProcess || claimProcess) {
         log('Tunnel already running');
         return;
     }
     
     if (!await installPlayit()) return;
     
-    log('Starting playit.gg tunnel...');
-    tunnelStatus = 'starting';
-    broadcast({ type: 'tunnel', status: tunnelStatus });
-    
     const playitBin = PLAYIT_DIR + '/playit';
-    const tomlPath = PLAYIT_DIR + '/playit.toml';
+    const playitCli = PLAYIT_DIR + '/playit-cli';
     
-    // Check if we have a config (already claimed)
-    const hasConfig = fs.existsSync(tomlPath);
-    
-    playitProcess = spawn(playitBin, hasConfig ? ['--config', tomlPath] : [], { 
-        cwd: PLAYIT_DIR,
-        env: { ...process.env, HOME: PLAYIT_DIR }
-    });
-    
-    const handleOutput = (data) => {
-        const text = data.toString();
-        console.log('[playit]', text.trim());
+    // Check if we have a secret (already claimed)
+    if (fs.existsSync(SECRET_FILE)) {
+        log('Starting tunnel with existing secret...');
+        tunnelStatus = 'starting';
+        broadcast({ type: 'tunnel', status: tunnelStatus });
         
-        // Log important messages
-        if (text.includes('claim') || text.includes('http') || text.includes('tunnel') || text.includes('error')) {
-            log('[tunnel] ' + text.trim().substring(0, 200));
-        }
+        playitProcess = spawn(playitBin, ['--secret-path', SECRET_FILE], { 
+            cwd: PLAYIT_DIR,
+            env: { ...process.env, HOME: PLAYIT_DIR }
+        });
         
-        // Check for claim URL - multiple formats
-        const claimMatch = text.match(/(https:\/\/playit\.gg\/claim\/[\w-]+)/) || 
-                          text.match(/(https:\/\/playit\.gg\/[^\s]+claim[^\s]*)/) ||
-                          text.match(/claim.*(https:\/\/[^\s]+)/i);
-        if (claimMatch) {
-            tunnelAddress = claimMatch[1];
+        playitProcess.stdout.on('data', handlePlayitOutput);
+        playitProcess.stderr.on('data', handlePlayitOutput);
+        playitProcess.on('close', (code) => {
+            log(`Tunnel exited (${code})`);
+            playitProcess = null;
+            if (tunnelStatus !== 'connected') {
+                tunnelStatus = 'stopped';
+                broadcast({ type: 'tunnel', status: tunnelStatus });
+            }
+        });
+    } else {
+        // Need to claim first
+        log('Generating claim link...');
+        tunnelStatus = 'claiming';
+        
+        try {
+            // Generate claim code
+            claimCode = execSync(`${playitCli} claim generate`, { cwd: PLAYIT_DIR }).toString().trim();
+            claimUrl = `https://playit.gg/claim/${claimCode}`;
+            log('🔗 CLAIM YOUR TUNNEL: ' + claimUrl);
+            
             tunnelStatus = 'claim';
-            log('🔗 CLAIM: ' + tunnelAddress);
-            broadcast({ type: 'tunnel', status: 'claim', url: tunnelAddress });
-        }
-        
-        // Check for tunnel address
-        const addrMatch = text.match(/([a-z0-9-]+\.(?:at\.playit\.gg|ply\.gg|joinmc\.link)(?::\d+)?)/i) ||
-                         text.match(/address[:\s]+([^\s]+\.gg[^\s]*)/i);
-        if (addrMatch && !text.includes('claim')) {
-            tunnelAddress = addrMatch[1];
-            tunnelStatus = 'connected';
-            log('✅ CONNECTED: ' + tunnelAddress);
-            broadcast({ type: 'tunnel', status: 'connected', address: tunnelAddress });
-        }
-    };
-    
-    playitProcess.stdout.on('data', handleOutput);
-    playitProcess.stderr.on('data', handleOutput);
-    
-    playitProcess.on('error', (err) => {
-        log('Tunnel error: ' + err.message);
-        tunnelStatus = 'error';
-        broadcast({ type: 'tunnel', status: 'error' });
-    });
-    
-    playitProcess.on('close', (code) => {
-        log(`Tunnel exited (${code})`);
-        playitProcess = null;
-        // Keep claim URL if we have one
-        if (tunnelStatus !== 'claim' && tunnelStatus !== 'connected') {
+            broadcast({ type: 'tunnel', status: 'claim', url: claimUrl });
+            
+            // Start exchange process (waits for claim to complete)
+            log('Waiting for you to claim the tunnel...');
+            claimProcess = spawn(playitCli, ['claim', 'exchange', '--wait', '300', claimCode], {
+                cwd: PLAYIT_DIR,
+                env: { ...process.env, HOME: PLAYIT_DIR }
+            });
+            
+            let secretData = '';
+            claimProcess.stdout.on('data', (data) => {
+                secretData += data.toString();
+                console.log('[claim]', data.toString().trim());
+            });
+            
+            claimProcess.stderr.on('data', (data) => {
+                console.log('[claim err]', data.toString().trim());
+            });
+            
+            claimProcess.on('close', (code) => {
+                claimProcess = null;
+                if (code === 0 && secretData.trim()) {
+                    // Save the secret
+                    fs.writeFileSync(SECRET_FILE, `secret_key = "${secretData.trim()}"\n`);
+                    log('✅ Tunnel claimed! Starting...');
+                    claimCode = null;
+                    claimUrl = null;
+                    // Now start the actual tunnel
+                    startTunnel();
+                } else {
+                    log('Claim expired or failed');
+                    tunnelStatus = 'stopped';
+                    claimCode = null;
+                    claimUrl = null;
+                    broadcast({ type: 'tunnel', status: 'stopped' });
+                }
+            });
+        } catch (e) {
+            log('Claim generation failed: ' + e.message);
             tunnelStatus = 'stopped';
-            tunnelAddress = null;
+            broadcast({ type: 'tunnel', status: 'stopped' });
         }
-        broadcast({ type: 'tunnel', status: tunnelStatus, address: tunnelAddress, url: tunnelStatus === 'claim' ? tunnelAddress : null });
-    });
+    }
+}
+
+function handlePlayitOutput(data) {
+    const text = data.toString();
+    console.log('[playit]', text.trim());
+    
+    // Look for tunnel address in output
+    const addrMatch = text.match(/tunnel_addr[:\s=]+([^\s,}]+)/i) ||
+                     text.match(/([a-z0-9-]+\.(?:at\.playit\.gg|ply\.gg|joinmc\.link)(?::\d+)?)/i);
+    if (addrMatch) {
+        tunnelAddress = addrMatch[1];
+        tunnelStatus = 'connected';
+        log('✅ CONNECTED: ' + tunnelAddress);
+        broadcast({ type: 'tunnel', status: 'connected', address: tunnelAddress });
+    }
+    
+    // Check for errors
+    if (text.includes('error') && !text.includes('INFO')) {
+        log('[tunnel] ' + text.trim().substring(0, 150));
+    }
 }
 
 function stopTunnel() {
-    if (playitProcess) { 
-        playitProcess.kill(); 
-        playitProcess = null; 
-    }
+    if (playitProcess) { playitProcess.kill(); playitProcess = null; }
+    if (claimProcess) { claimProcess.kill(); claimProcess = null; }
     tunnelStatus = 'stopped'; 
     tunnelAddress = null;
+    claimCode = null;
+    claimUrl = null;
     broadcast({ type: 'tunnel', status: 'stopped' });
 }
 
@@ -202,13 +230,10 @@ async function installJava(version) {
     };
     const extractDirs = { 8: 'jdk8u422-b05-jre', 17: 'jdk-17.0.12+7-jre', 21: 'jdk-21.0.4+7-jre' };
     const dir = `${JAVA_DIR}/jre${version}`;
-    
     if (fs.existsSync(dir + '/bin/java')) return true;
-    
     log(`Installing Java ${version}...`);
     status = 'installing';
     broadcast({ type: 'status', status });
-    
     try {
         execSync(`wget -q -O /tmp/jre.tar.gz "${urls[version]}"`, { timeout: 300000 });
         execSync(`mkdir -p ${dir} && tar -xzf /tmp/jre.tar.gz -C /tmp && mv /tmp/${extractDirs[version]}/* ${dir}/ && rm /tmp/jre.tar.gz`);
@@ -233,10 +258,8 @@ async function downloadServer() {
     log(`Downloading ${config.serverType} ${config.version}...`);
     status = 'downloading';
     broadcast({ type: 'status', status });
-    
     if (fs.existsSync(jarPath)) fs.unlinkSync(jarPath);
     const javaDir = getJavaDir(config.version);
-    
     try {
         if (config.serverType === 'vanilla') {
             const url = await getVanillaJarUrl(config.version);
@@ -277,28 +300,18 @@ max-tick-time=120000
 
 async function startServer() {
     if (mcProcess) return { error: 'Already running' };
-    
-    ensureDirs();
-    logs = [];
-    status = 'starting';
+    ensureDirs(); logs = []; status = 'starting';
     broadcast({ type: 'status', status });
-    
     const javaVersion = getJavaVersion(config.version);
     const javaDir = getJavaDir(config.version);
-    
     log(`Starting ${config.serverType} ${config.version}`);
-    
     if (!await installJava(javaVersion)) return { error: 'Java failed' };
     if (!fs.existsSync(SERVER_DIR + '/server.jar')) {
         if (!await downloadServer()) return { error: 'Download failed' };
     }
-    
-    createConfigs();
-    saveConfig();
-    
+    createConfigs(); saveConfig();
     mcProcess = spawn(javaDir + '/bin/java', ['-Xms128M', '-Xmx380M', '-XX:+UseG1GC', '-jar', 'server.jar', 'nogui'], 
         { cwd: SERVER_DIR, env: { ...process.env, JAVA_HOME: javaDir } });
-    
     mcProcess.stdout.on('data', handleOutput);
     mcProcess.stderr.on('data', handleOutput);
     mcProcess.on('close', (code) => {
@@ -307,10 +320,7 @@ async function startServer() {
         broadcast({ type: 'status', status });
         broadcast({ type: 'players', players });
     });
-    
-    // Start tunnel after server starts
     setTimeout(() => startTunnel(), 5000);
-    
     return { success: true };
 }
 
@@ -320,13 +330,11 @@ function handleOutput(data) {
         logs.push(line);
         if (logs.length > 500) logs.shift();
         broadcast({ type: 'log', data: line });
-        
         if (line.includes('Done') && line.includes('For help')) {
             status = 'running';
             log('✓ Server ready!');
             broadcast({ type: 'status', status });
         }
-        
         const join = line.match(/(\w+)\[.*?\] logged in|(\w+) joined the game/);
         const leave = line.match(/(\w+) left the game/);
         if (join) { const n = join[1] || join[2]; if (!players.includes(n)) { players.push(n); broadcast({ type: 'players', players }); } }
@@ -336,8 +344,7 @@ function handleOutput(data) {
 
 function stopServer() {
     if (!mcProcess) return { error: 'Not running' };
-    log('Stopping...');
-    status = 'stopping';
+    log('Stopping...'); status = 'stopping';
     broadcast({ type: 'status', status });
     mcProcess.stdin.write('stop\n');
     setTimeout(() => mcProcess && mcProcess.kill(), 15000);
@@ -352,14 +359,9 @@ async function restartServer() {
 async function changeServer(newType, newVersion) {
     const wasRunning = !!mcProcess;
     if (wasRunning) { stopServer(); await new Promise(r => { const i = setInterval(() => { if (!mcProcess) { clearInterval(i); r(); } }, 500); setTimeout(() => { clearInterval(i); r(); }, 20000); }); }
-    
-    config.serverType = newType;
-    config.version = newVersion;
-    saveConfig();
-    
+    config.serverType = newType; config.version = newVersion; saveConfig();
     try { fs.unlinkSync(SERVER_DIR + '/server.jar'); } catch(e) {}
     try { execSync(`rm -rf ${SERVER_DIR}/.fabric ${SERVER_DIR}/libraries ${SERVER_DIR}/.mixin*`); } catch(e) {}
-    
     log(`Changed to ${newType} ${newVersion}`);
     if (wasRunning) return startServer();
     return { success: true };
@@ -377,11 +379,8 @@ function backupWorld() {
     const worldDir = SERVER_DIR + '/world';
     if (!fs.existsSync(worldDir)) return { error: 'No world' };
     const name = `world-${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}`;
-    try {
-        execSync(`cp -r ${worldDir} ${BACKUPS_DIR}/${name}`);
-        log(`Backup: ${name}`);
-        return { success: true, name };
-    } catch (e) { return { error: 'Failed' }; }
+    try { execSync(`cp -r ${worldDir} ${BACKUPS_DIR}/${name}`); log(`Backup: ${name}`); return { success: true, name }; } 
+    catch (e) { return { error: 'Failed' }; }
 }
 
 function listBackups() {
@@ -396,25 +395,16 @@ function listBackups() {
 function restoreBackup(name) {
     if (mcProcess) return { error: 'Stop server first' };
     if (!fs.existsSync(BACKUPS_DIR + '/' + name)) return { error: 'Not found' };
-    try {
-        execSync(`rm -rf ${SERVER_DIR}/world && cp -r ${BACKUPS_DIR}/${name} ${SERVER_DIR}/world`);
-        log(`Restored: ${name}`);
-        return { success: true };
-    } catch (e) { return { error: 'Failed' }; }
-}
-
-function deleteBackup(name) {
-    try { execSync(`rm -rf ${BACKUPS_DIR}/${name}`); return { success: true }; } 
+    try { execSync(`rm -rf ${SERVER_DIR}/world && cp -r ${BACKUPS_DIR}/${name} ${SERVER_DIR}/world`); log(`Restored: ${name}`); return { success: true }; } 
     catch (e) { return { error: 'Failed' }; }
 }
 
+function deleteBackup(name) { try { execSync(`rm -rf ${BACKUPS_DIR}/${name}`); return { success: true }; } catch (e) { return { error: 'Failed' }; } }
+
 function resetWorld() {
     if (mcProcess) return { error: 'Stop server first' };
-    try {
-        execSync(`rm -rf ${SERVER_DIR}/world ${SERVER_DIR}/world_nether ${SERVER_DIR}/world_the_end`);
-        log('World reset');
-        return { success: true };
-    } catch (e) { return { error: 'Failed' }; }
+    try { execSync(`rm -rf ${SERVER_DIR}/world ${SERVER_DIR}/world_nether ${SERVER_DIR}/world_the_end`); log('World reset'); return { success: true }; } 
+    catch (e) { return { error: 'Failed' }; }
 }
 
 // ==================== FILES ====================
@@ -433,15 +423,13 @@ function listFiles(subpath = '') {
 function readFile(subpath) {
     const filePath = path.join(SERVER_DIR, subpath);
     if (!filePath.startsWith(SERVER_DIR)) return { error: 'Invalid' };
-    try { return { content: fs.readFileSync(filePath, 'utf8'), path: subpath }; } 
-    catch (e) { return { error: 'Cannot read' }; }
+    try { return { content: fs.readFileSync(filePath, 'utf8'), path: subpath }; } catch (e) { return { error: 'Cannot read' }; }
 }
 
 function writeFile(subpath, content) {
     const filePath = path.join(SERVER_DIR, subpath);
     if (!filePath.startsWith(SERVER_DIR)) return { error: 'Invalid' };
-    try { fs.writeFileSync(filePath, content); log(`Saved: ${subpath}`); return { success: true }; } 
-    catch (e) { return { error: 'Cannot write' }; }
+    try { fs.writeFileSync(filePath, content); log(`Saved: ${subpath}`); return { success: true }; } catch (e) { return { error: 'Cannot write' }; }
 }
 
 function deleteFile(subpath) {
@@ -449,8 +437,7 @@ function deleteFile(subpath) {
     if (!filePath.startsWith(SERVER_DIR)) return { error: 'Invalid' };
     try {
         const stat = fs.statSync(filePath);
-        if (stat.isDirectory()) execSync(`rm -rf "${filePath}"`);
-        else fs.unlinkSync(filePath);
+        if (stat.isDirectory()) execSync(`rm -rf "${filePath}"`); else fs.unlinkSync(filePath);
         return { success: true };
     } catch (e) { return { error: 'Cannot delete' }; }
 }
@@ -466,30 +453,25 @@ async function installPlugin(url, type = 'plugin') {
     const dir = type === 'mod' ? SERVER_DIR + '/mods' : SERVER_DIR + '/plugins';
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
     const fileName = url.split('/').pop().split('?')[0] || 'plugin.jar';
-    try {
-        log(`Installing: ${fileName}...`);
-        execSync(`wget -q -O "${dir}/${fileName}" "${url}"`, { timeout: 120000 });
-        log(`Installed: ${fileName}`);
-        return { success: true, name: fileName };
-    } catch (e) { return { error: 'Failed' }; }
+    try { log(`Installing: ${fileName}...`); execSync(`wget -q -O "${dir}/${fileName}" "${url}"`, { timeout: 120000 }); log(`Installed: ${fileName}`); return { success: true, name: fileName }; } 
+    catch (e) { return { error: 'Failed' }; }
 }
 
 function removePlugin(name, type = 'plugin') {
     const dir = type === 'mod' ? SERVER_DIR + '/mods' : SERVER_DIR + '/plugins';
-    try { fs.unlinkSync(dir + '/' + name); log(`Removed: ${name}`); return { success: true }; } 
-    catch (e) { return { error: 'Failed' }; }
+    try { fs.unlinkSync(dir + '/' + name); log(`Removed: ${name}`); return { success: true }; } catch (e) { return { error: 'Failed' }; }
 }
 
 // ==================== ROUTES ====================
 wss.on('connection', (ws) => {
     ws.send(JSON.stringify({ 
         type: 'init', status, players, config, logs: logs.slice(-100), versions: cachedVersions,
-        tunnel: { status: tunnelStatus, address: tunnelAddress, url: tunnelStatus === 'claim' ? tunnelAddress : null }
+        tunnel: { status: tunnelStatus, address: tunnelAddress, url: claimUrl }
     }));
     ws.on('message', (msg) => { try { const { type, data } = JSON.parse(msg); if (type === 'command') sendCommand(data); } catch (e) {} });
 });
 
-app.get('/api/status', (req, res) => res.json({ status, players, config, tunnel: { status: tunnelStatus, address: tunnelAddress } }));
+app.get('/api/status', (req, res) => res.json({ status, players, config, tunnel: { status: tunnelStatus, address: tunnelAddress, url: claimUrl } }));
 app.get('/api/versions', (req, res) => res.json(cachedVersions));
 app.post('/api/start', async (req, res) => res.json(await startServer()));
 app.post('/api/stop', (req, res) => res.json(stopServer()));
@@ -520,9 +502,7 @@ app.get('/health', (req, res) => res.send('OK'));
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, async () => {
     console.log(`Dashboard on port ${PORT}`);
-    ensureDirs();
-    loadConfig();
-    await loadVersions();
+    ensureDirs(); loadConfig(); await loadVersions();
     if (config.autoStart) { log('Auto-starting...'); startServer(); }
 });
 
