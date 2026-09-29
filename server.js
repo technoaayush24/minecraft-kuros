@@ -559,8 +559,8 @@ const Pixxo = require('@sarangkale66/pixxo-sdk-node');
 const archiver = require('archiver');
 
 const pixxo = new Pixxo({
-    email: "test@example.com",
-    password: "password123"
+    email: process.env.PIXXO_EMAIL || "",
+    password: process.env.PIXXO_PASSWORD || ""
 });
 
 const CLOUD_INDEX_FILE = DATA_DIR + '/cloud_backups.json';
