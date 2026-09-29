@@ -3,7 +3,6 @@ const http = require('http');
 const WebSocket = require('ws');
 const { spawn, execSync } = require('child_process');
 const fs = require('fs');
-const path = require('path');
 
 const app = express();
 const server = http.createServer(app);
@@ -12,33 +11,35 @@ const wss = new WebSocket.Server({ server, path: '/ws' });
 app.use(express.json());
 app.use(express.static('public'));
 
-// PERSISTENT DATA - survives restarts
-const DATA_DIR = '/data';  // Mount this as persistent volume
+// PERSISTENT DATA
+const DATA_DIR = '/data';
 const SERVERS_DIR = DATA_DIR + '/servers';
 const JAVA_DIR = DATA_DIR + '/java';
 const CONFIG_FILE = DATA_DIR + '/config.json';
+const PLAYIT_DIR = DATA_DIR + '/playit';
+const PLAYIT_CONFIG = PLAYIT_DIR + '/playit.toml';
 
 let mcProcess = null;
+let playitProcess = null;
 let logs = [];
 let status = 'stopped';
 let players = [];
+let tunnelAddress = null;
+let tunnelStatus = 'stopped';
 let config = { serverType: 'vanilla', version: '1.21.4', port: 25565, autoStart: true };
 
-// Ensure directories exist
 function ensureDirs() {
-    [DATA_DIR, SERVERS_DIR, JAVA_DIR].forEach(dir => {
+    [DATA_DIR, SERVERS_DIR, JAVA_DIR, PLAYIT_DIR].forEach(dir => {
         if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
     });
 }
 
-// Get server directory (each type+version combo has its own folder with world data)
 function getServerDir() {
     const dir = `${SERVERS_DIR}/${config.serverType}-${config.version}`;
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
     return dir;
 }
 
-// Java version requirements
 function getJavaVersion(mcVersion) {
     const ver = mcVersion.split('.').map(Number);
     const minor = ver[1] || 0, patch = ver[2] || 0;
@@ -76,9 +77,7 @@ async function loadVersions() {
 
 function loadConfig() {
     try { 
-        if (fs.existsSync(CONFIG_FILE)) {
-            config = { ...config, ...JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8')) };
-        }
+        if (fs.existsSync(CONFIG_FILE)) config = { ...config, ...JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8')) };
     } catch (e) {}
 }
 
@@ -99,7 +98,121 @@ function log(msg) {
     broadcast({ type: 'log', data: line });
 }
 
-// Install Java (persisted - only downloads once)
+// ==================== PLAYIT.GG TUNNEL ====================
+async function installPlayit() {
+    const playitBin = PLAYIT_DIR + '/playit';
+    if (fs.existsSync(playitBin)) return true;
+    
+    log('Installing playit.gg tunnel...');
+    try {
+        ensureDirs();
+        // Use specific version that works
+        execSync(`wget -q -O ${playitBin} "https://builds.playit.gg/1.0.10/playit-linux-amd64"`, { timeout: 120000 });
+        execSync(`chmod +x ${playitBin}`);
+        log('playit.gg installed');
+        return true;
+    } catch (e) { 
+        log('playit.gg install failed: ' + e.message); 
+        return false; 
+    }
+}
+
+async function startTunnel() {
+    if (playitProcess) {
+        log('Tunnel already running');
+        return;
+    }
+    
+    if (!await installPlayit()) return;
+    
+    log('Starting tunnel...');
+    tunnelStatus = 'starting';
+    broadcast({ type: 'tunnel', status: tunnelStatus });
+    
+    const playitBin = PLAYIT_DIR + '/playit';
+    const args = [];
+    
+    // If we have a saved config, use it
+    if (fs.existsSync(PLAYIT_CONFIG)) {
+        args.push('-c', PLAYIT_CONFIG);
+    }
+    
+    playitProcess = spawn(playitBin, args, { 
+        cwd: PLAYIT_DIR,
+        env: { ...process.env, HOME: PLAYIT_DIR }
+    });
+    
+    let outputBuffer = '';
+    
+    playitProcess.stdout.on('data', (data) => {
+        const text = data.toString();
+        outputBuffer += text;
+        
+        // Look for claim URL (first time setup)
+        const claimMatch = text.match(/https:\/\/playit\.gg\/claim\/[\w-]+/);
+        if (claimMatch) {
+            tunnelAddress = claimMatch[0];
+            tunnelStatus = 'claim';
+            log('🔗 CLAIM YOUR TUNNEL: ' + tunnelAddress);
+            broadcast({ type: 'tunnel', status: 'claim', url: tunnelAddress });
+        }
+        
+        // Look for tunnel address (after claimed)
+        // Format varies: "address allocated: xxx.ply.gg:12345" or just "xxx.ply.gg:12345"
+        const addrMatch = text.match(/([a-z0-9-]+\.(?:at\.playit\.gg|ply\.gg):\d+)/i);
+        if (addrMatch) {
+            tunnelAddress = addrMatch[1];
+            tunnelStatus = 'connected';
+            log('✅ TUNNEL READY: ' + tunnelAddress);
+            broadcast({ type: 'tunnel', status: 'connected', address: tunnelAddress });
+        }
+        
+        // Also check for "tunnel created" or similar success messages
+        if (text.includes('tunnel') && text.includes('created')) {
+            tunnelStatus = 'connected';
+            broadcast({ type: 'tunnel', status: tunnelStatus });
+        }
+    });
+    
+    playitProcess.stderr.on('data', (data) => {
+        const text = data.toString();
+        // Check stderr too for addresses
+        const addrMatch = text.match(/([a-z0-9-]+\.(?:at\.playit\.gg|ply\.gg):\d+)/i);
+        if (addrMatch) {
+            tunnelAddress = addrMatch[1];
+            tunnelStatus = 'connected';
+            log('✅ TUNNEL READY: ' + tunnelAddress);
+            broadcast({ type: 'tunnel', status: 'connected', address: tunnelAddress });
+        }
+    });
+    
+    playitProcess.on('close', (code) => {
+        log(`Tunnel stopped (${code})`);
+        playitProcess = null;
+        tunnelStatus = 'stopped';
+        tunnelAddress = null;
+        broadcast({ type: 'tunnel', status: 'stopped' });
+    });
+    
+    playitProcess.on('error', (err) => {
+        log('Tunnel error: ' + err.message);
+        tunnelStatus = 'error';
+        broadcast({ type: 'tunnel', status: 'error', message: err.message });
+    });
+}
+
+function stopTunnel() {
+    if (playitProcess) {
+        playitProcess.kill();
+        playitProcess = null;
+        tunnelStatus = 'stopped';
+        tunnelAddress = null;
+        broadcast({ type: 'tunnel', status: 'stopped' });
+        log('Tunnel stopped');
+    }
+}
+
+// ==================== JAVA ====================
 async function installJava(version) {
     const urls = {
         8: 'https://github.com/adoptium/temurin8-binaries/releases/download/jdk8u422-b05/OpenJDK8U-jre_x64_alpine-linux_hotspot_8u422b05.tar.gz',
@@ -109,10 +222,8 @@ async function installJava(version) {
     const extractDirs = { 8: 'jdk8u422-b05-jre', 17: 'jdk-17.0.12+7-jre', 21: 'jdk-21.0.4+7-jre' };
     
     const dir = `${JAVA_DIR}/jre${version}`;
-    
-    // Already installed (persisted)
     if (fs.existsSync(dir + '/bin/java')) {
-        log(`Java ${version} ready (cached)`);
+        log(`Java ${version} ready`);
         return true;
     }
     
@@ -123,9 +234,7 @@ async function installJava(version) {
     try {
         const tmpFile = `/tmp/jre${version}.tar.gz`;
         execSync(`wget -q -O ${tmpFile} "${urls[version]}"`, { timeout: 300000 });
-        execSync(`mkdir -p ${dir}`);
-        execSync(`tar -xzf ${tmpFile} -C /tmp`);
-        execSync(`mv /tmp/${extractDirs[version]}/* ${dir}/`);
+        execSync(`mkdir -p ${dir} && tar -xzf ${tmpFile} -C /tmp && mv /tmp/${extractDirs[version]}/* ${dir}/`);
         execSync(`rm -f ${tmpFile}`);
         log(`Java ${version} installed`);
         return true;
@@ -136,6 +245,7 @@ async function installJava(version) {
     }
 }
 
+// ==================== SERVER ====================
 async function getVanillaJarUrl(version) {
     try {
         if (vanillaManifest[version]) {
@@ -152,14 +262,12 @@ async function getVanillaJarUrl(version) {
     return null;
 }
 
-// Download server (persisted - world and configs saved per server)
 async function downloadServer() {
     const serverDir = getServerDir();
     const jarPath = serverDir + '/server.jar';
     
-    // Already downloaded (persisted with world data)
     if (fs.existsSync(jarPath)) {
-        log(`Server ${config.serverType} ${config.version} ready (cached)`);
+        log(`Server ready (cached)`);
         return true;
     }
     
@@ -183,7 +291,7 @@ async function downloadServer() {
             execSync(`wget -q -O "${jarPath}" "https://api.papermc.io/v2/projects/paper/versions/${config.version}/builds/${latestBuild}/downloads/${fileName}"`, { timeout: 300000 });
             
         } else if (config.serverType === 'neoforge') {
-            log('Setting up NeoForge (takes a while)...');
+            log('Setting up NeoForge...');
             const nfVersions = JSON.parse(execSync('wget -qO- "https://maven.neoforged.net/api/maven/versions/releases/net/neoforged/neoforge"', { timeout: 15000 }).toString());
             const mcVer = config.version.replace('1.', '');
             const nfVersion = nfVersions.versions.reverse().find(v => v.startsWith(mcVer));
@@ -197,9 +305,7 @@ async function downloadServer() {
             const installerData = JSON.parse(execSync('wget -qO- "https://meta.fabricmc.net/v2/versions/installer"', { timeout: 15000 }).toString());
             execSync(`wget -q -O ${serverDir}/fabric-installer.jar "${installerData[0]?.url}"`, { timeout: 120000 });
             execSync(`cd ${serverDir} && ${javaDir}/bin/java -jar fabric-installer.jar server -mcversion ${config.version} -downloadMinecraft`, { timeout: 300000 });
-            if (fs.existsSync(serverDir + '/fabric-server-launch.jar')) {
-                fs.renameSync(serverDir + '/fabric-server-launch.jar', jarPath);
-            }
+            if (fs.existsSync(serverDir + '/fabric-server-launch.jar')) fs.renameSync(serverDir + '/fabric-server-launch.jar', jarPath);
             execSync(`rm -f ${serverDir}/fabric-installer.jar`);
         }
         
@@ -214,12 +320,7 @@ async function downloadServer() {
 
 function createConfigs() {
     const serverDir = getServerDir();
-    
-    // Only create if not exists (preserve user changes)
-    if (!fs.existsSync(serverDir + '/eula.txt')) {
-        fs.writeFileSync(serverDir + '/eula.txt', 'eula=true\n');
-    }
-    
+    if (!fs.existsSync(serverDir + '/eula.txt')) fs.writeFileSync(serverDir + '/eula.txt', 'eula=true\n');
     if (!fs.existsSync(serverDir + '/server.properties')) {
         fs.writeFileSync(serverDir + '/server.properties', `
 server-port=${config.port}
@@ -232,8 +333,6 @@ difficulty=normal
 gamemode=survival
 motd=\\u00a7b\\u00a7lKuros MC\\u00a7r - ${config.serverType} ${config.version}
 enable-command-block=true
-max-tick-time=120000
-level-name=world
 `.trim());
     }
 }
@@ -253,26 +352,21 @@ async function startServer() {
     
     log(`Starting ${config.serverType} ${config.version} (Java ${javaVersion})`);
     
-    // Install Java if needed
     if (!await installJava(javaVersion)) return { error: 'Java failed' };
-    
-    // Download server if needed
     if (!await downloadServer()) return { error: 'Download failed' };
     
-    // Create configs (only if not exist - preserves user configs)
     createConfigs();
     saveConfig();
     
-    // Use max available memory
     const maxMem = 450;
-    
     let cmd, args;
+    
     if (config.serverType === 'neoforge' && fs.existsSync(serverDir + '/run.sh')) {
         cmd = '/bin/sh';
         args = ['run.sh', 'nogui'];
     } else {
         cmd = javaDir + '/bin/java';
-        args = ['-Xms128M', `-Xmx${maxMem}M`, '-XX:+UseG1GC', '-XX:+ParallelRefProcEnabled', '-jar', 'server.jar', 'nogui'];
+        args = ['-Xms128M', `-Xmx${maxMem}M`, '-XX:+UseG1GC', '-jar', 'server.jar', 'nogui'];
     }
     
     mcProcess = spawn(cmd, args, { cwd: serverDir, env: { ...process.env, JAVA_HOME: javaDir } });
@@ -281,13 +375,16 @@ async function startServer() {
     mcProcess.stderr.on('data', handleOutput);
     
     mcProcess.on('close', (code) => {
-        log(`Server stopped (exit ${code})`);
+        log(`Server stopped (${code})`);
         status = 'stopped';
         mcProcess = null;
         players = [];
         broadcast({ type: 'status', status });
         broadcast({ type: 'players', players });
     });
+    
+    // Auto-start tunnel
+    startTunnel();
     
     return { success: true };
 }
@@ -309,15 +406,9 @@ function handleOutput(data) {
         const leave = line.match(/(\w+) left the game/);
         if (join) { 
             const name = join[1] || join[2]; 
-            if (!players.includes(name)) { 
-                players.push(name); 
-                broadcast({ type: 'players', players }); 
-            } 
+            if (!players.includes(name)) { players.push(name); broadcast({ type: 'players', players }); } 
         }
-        if (leave) { 
-            players = players.filter(p => p !== leave[1]); 
-            broadcast({ type: 'players', players }); 
-        }
+        if (leave) { players = players.filter(p => p !== leave[1]); broadcast({ type: 'players', players }); }
     });
 }
 
@@ -334,35 +425,21 @@ function stopServer() {
 async function restartServer() {
     if (mcProcess) { 
         stopServer(); 
-        await new Promise(r => { 
-            const i = setInterval(() => { 
-                if (!mcProcess) { clearInterval(i); r(); } 
-            }, 500); 
-            setTimeout(() => { clearInterval(i); r(); }, 20000); 
-        }); 
+        await new Promise(r => { const i = setInterval(() => { if (!mcProcess) { clearInterval(i); r(); } }, 500); setTimeout(() => { clearInterval(i); r(); }, 20000); }); 
     }
     return startServer();
 }
 
 async function changeServer(newType, newVersion) {
     const wasRunning = !!mcProcess;
-    
     if (wasRunning) { 
         stopServer(); 
-        await new Promise(r => { 
-            const i = setInterval(() => { 
-                if (!mcProcess) { clearInterval(i); r(); } 
-            }, 500); 
-            setTimeout(() => { clearInterval(i); r(); }, 20000); 
-        }); 
+        await new Promise(r => { const i = setInterval(() => { if (!mcProcess) { clearInterval(i); r(); } }, 500); setTimeout(() => { clearInterval(i); r(); }, 20000); }); 
     }
-    
     config.serverType = newType;
     config.version = newVersion;
     saveConfig();
-    
     log(`Switched to ${newType} ${newVersion}`);
-    
     if (wasRunning) return startServer();
     return { success: true };
 }
@@ -377,23 +454,16 @@ function sendCommand(cmd) {
 // WebSocket
 wss.on('connection', (ws) => {
     ws.send(JSON.stringify({ 
-        type: 'init', 
-        status, 
-        players, 
-        config, 
-        logs: logs.slice(-100),
-        versions: cachedVersions
+        type: 'init', status, players, config, logs: logs.slice(-100), versions: cachedVersions,
+        tunnel: { status: tunnelStatus, address: tunnelAddress }
     }));
     ws.on('message', (msg) => { 
-        try { 
-            const { type, data } = JSON.parse(msg); 
-            if (type === 'command') sendCommand(data); 
-        } catch (e) {} 
+        try { const { type, data } = JSON.parse(msg); if (type === 'command') sendCommand(data); } catch (e) {} 
     });
 });
 
 // API
-app.get('/api/status', (req, res) => res.json({ status, players, config, logsCount: logs.length }));
+app.get('/api/status', (req, res) => res.json({ status, players, config, tunnel: { status: tunnelStatus, address: tunnelAddress } }));
 app.get('/api/versions', (req, res) => res.json(cachedVersions));
 app.post('/api/start', async (req, res) => res.json(await startServer()));
 app.post('/api/stop', (req, res) => res.json(stopServer()));
@@ -404,6 +474,8 @@ app.post('/api/change', async (req, res) => {
     res.json(await changeServer(serverType, version)); 
 });
 app.post('/api/command', (req, res) => res.json(sendCommand(req.body.cmd || '')));
+app.post('/api/tunnel/start', async (req, res) => { await startTunnel(); res.json({ success: true }); });
+app.post('/api/tunnel/stop', (req, res) => { stopTunnel(); res.json({ success: true }); });
 app.get('/api/logs', (req, res) => res.json({ logs: logs.slice(-(parseInt(req.query.count) || 100)) }));
 app.get('/health', (req, res) => res.send('OK'));
 
@@ -414,8 +486,6 @@ server.listen(PORT, async () => {
     ensureDirs();
     loadConfig();
     await loadVersions();
-    
-    // Auto-start if enabled
     if (config.autoStart) {
         log('Auto-starting server...');
         startServer();
@@ -423,14 +493,7 @@ server.listen(PORT, async () => {
 });
 
 process.on('SIGTERM', () => { 
-    if (mcProcess) {
-        log('Saving and shutting down...');
-        mcProcess.stdin.write('save-all\n');
-        setTimeout(() => {
-            mcProcess.stdin.write('stop\n');
-            setTimeout(() => process.exit(0), 10000);
-        }, 2000);
-    } else {
-        process.exit(0);
-    }
+    if (mcProcess) { mcProcess.stdin.write('save-all\n'); setTimeout(() => { mcProcess.stdin.write('stop\n'); }, 2000); }
+    stopTunnel();
+    setTimeout(() => process.exit(0), 12000);
 });
