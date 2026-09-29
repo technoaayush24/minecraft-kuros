@@ -211,6 +211,11 @@
                         </div>
                         <p style="font-size:10px;color:var(--text2);margin-top:6px">Paste direct .jar URL from Modrinth, Spigot, CurseForge, etc.</p>
                     </div>
+                    <div class="world-card" style="background:linear-gradient(135deg,rgba(34,197,94,0.1),rgba(59,130,246,0.1));border:1px solid var(--accent)">
+                        <div class="world-title">⚡ Performance Optimization</div>
+                        <p style="font-size:11px;color:var(--text2);margin:8px 0">Install Spark + ClearLagg plugins and tune server configs for low-resource servers.</p>
+                        <button class="btn btn-sm btn-primary" onclick="optimizeServer()">Install Optimizations</button>
+                    </div>
                     <div class="world-card">
                         <div class="world-title">Installed Plugins</div>
                         <div id="pluginsList"></div>
@@ -384,6 +389,7 @@
         function formatSize(b) { return b < 1024 ? b + 'B' : b < 1048576 ? (b/1024).toFixed(1) + 'K' : (b/1048576).toFixed(1) + 'M'; }
         
         // Plugins
+        async function optimizeServer() { const r = await fetch("/api/optimize", { method: "POST" }); const j = await r.json(); appendLog("[UI] " + j.message); loadPlugins(); }
         async function loadPlugins() {
             const res = await fetch('/api/plugins').then(r => r.json());
             $('pluginsList').innerHTML = res.plugins.length ? res.plugins.map(p => `<div class="plugin-item"><span class="plugin-name">${p}</span><button class="btn btn-sm btn-danger" onclick="removePlugin('${p}','plugin')">Remove</button></div>`).join('') : '<div style="color:var(--text2);font-size:11px">No plugins</div>';

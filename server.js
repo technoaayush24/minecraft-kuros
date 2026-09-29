@@ -324,6 +324,76 @@ enforce-whitelist=false
 `);
 }
 
+
+// === Performance Optimization ===
+const SPARK_URL = 'https://ci.lucko.me/job/spark/lastSuccessfulBuild/artifact/spark-bukkit/build/libs/spark-1.10.119-bukkit.jar';
+const CLEARLAGG_URL = 'https://github.com/bob7l/ClearLag/releases/download/v3.2.2/ClearLag-3.2.2.jar';
+
+async function installOptimizationPlugins() {
+    if (config.serverType !== 'paper') return;
+    const pluginsDir = SERVER_DIR + '/plugins';
+    ensureDirs();
+    
+    // Install Spark if not exists
+    const sparkExists = fs.readdirSync(pluginsDir).some(f => f.toLowerCase().includes('spark'));
+    if (!sparkExists) {
+        log('[Optimize] Installing Spark profiler...');
+        try {
+            execSync(`wget -q -O "${pluginsDir}/spark.jar" "${SPARK_URL}"`, { timeout: 60000 });
+            log('[Optimize] Spark installed');
+        } catch (e) { log('[Optimize] Spark install failed: ' + e.message); }
+    }
+    
+    // Install ClearLagg if not exists
+    const clearlaggExists = fs.readdirSync(pluginsDir).some(f => f.toLowerCase().includes('clearlag'));
+    if (!clearlaggExists) {
+        log('[Optimize] Installing ClearLagg...');
+        try {
+            execSync(`wget -q -O "${pluginsDir}/ClearLagg.jar" "${CLEARLAGG_URL}"`, { timeout: 60000 });
+            log('[Optimize] ClearLagg installed');
+        } catch (e) { log('[Optimize] ClearLagg install failed: ' + e.message); }
+    }
+}
+
+function optimizeServerConfigs() {
+    // Optimize server.properties
+    const propsFile = SERVER_DIR + '/server.properties';
+    if (fs.existsSync(propsFile)) {
+        let props = fs.readFileSync(propsFile, 'utf8');
+        // Reduce view distance for performance
+        props = props.replace(/view-distance=\d+/, 'view-distance=6');
+        props = props.replace(/simulation-distance=\d+/, 'simulation-distance=4');
+        // Reduce max players if very high
+        if (props.includes('max-players=20')) {
+            props = props.replace(/max-players=\d+/, 'max-players=10');
+        }
+        fs.writeFileSync(propsFile, props);
+        log('[Optimize] server.properties tuned');
+    }
+    
+    // Optimize spigot.yml
+    const spigotFile = SERVER_DIR + '/spigot.yml';
+    if (fs.existsSync(spigotFile)) {
+        let spigot = fs.readFileSync(spigotFile, 'utf8');
+        // Reduce mob spawn ranges
+        spigot = spigot.replace(/mob-spawn-range: \d+/, 'mob-spawn-range: 4');
+        spigot = spigot.replace(/entity-activation-range:/, 'entity-activation-range:\n      animals: 16\n      monsters: 24\n      raiders: 48\n      misc: 8');
+        fs.writeFileSync(spigotFile, spigot);
+        log('[Optimize] spigot.yml tuned');
+    }
+    
+    // Create/update bukkit.yml for chunk loading
+    const bukkitFile = SERVER_DIR + '/bukkit.yml';
+    if (fs.existsSync(bukkitFile)) {
+        let bukkit = fs.readFileSync(bukkitFile, 'utf8');
+        bukkit = bukkit.replace(/chunk-gc:[\s\S]*?period-in-ticks: \d+/, 'chunk-gc:\n  period-in-ticks: 400');
+        fs.writeFileSync(bukkitFile, bukkit);
+        log('[Optimize] bukkit.yml tuned');
+    }
+}
+
+// === End Optimization ===
+
 async function startServer() {
     if (mcProcess) return { error: 'Already running' };
     ensureDirs(); logs = []; status = 'starting';
@@ -334,6 +404,12 @@ async function startServer() {
     if (!await installJava(javaVersion)) return { error: 'Java failed' };
     if (!fs.existsSync(SERVER_DIR + '/server.jar')) {
         if (!await downloadServer()) return { error: 'Download failed' };
+    }
+    // Install optimization plugins for Paper
+    // Optimize configs on every start
+    setTimeout(() => optimizeServerConfigs(), 5000);
+    if (config.serverType === "paper") {
+        await installOptimizationPlugins();
     }
     createConfigs(); saveConfig();
     mcProcess = spawn(javaDir + '/bin/java', ['-Xms128M', '-Xmx380M', '-XX:+UseG1GC', '-jar', 'server.jar', 'nogui'], 
@@ -576,6 +652,11 @@ wss.on('connection', (ws) => {
 
 app.get('/api/status', (req, res) => res.json({ status, players, config, tunnel: { status: tunnelStatus, address: tunnelAddress } }));
 app.post('/api/save-state', async (req, res) => { await saveState(); res.json({ message: 'State saved' }); });
+app.post('/api/optimize', async (req, res) => {
+    await installOptimizationPlugins();
+    optimizeServerConfigs();
+    res.json({ message: 'Optimization plugins installed and configs tuned. Restart server to apply.' });
+});
 app.get('/api/versions', (req, res) => res.json(cachedVersions));
 app.post('/api/start', async (req, res) => res.json(await startServer()));
 app.post('/api/stop', (req, res) => res.json(stopServer()));
