@@ -12,7 +12,7 @@ const wss = new WebSocket.Server({ server, path: '/ws' });
 app.use(express.json({ limit: '10mb' }));
 app.use(express.static('public'));
 
-const DATA_DIR = '/data/mcdata';
+const DATA_DIR = process.env.DATA_DIR || './data';
 const SERVER_DIR = DATA_DIR + '/server';
 const JAVA_DIR = DATA_DIR + '/java';
 const BACKUPS_DIR = DATA_DIR + '/backups';
@@ -70,13 +70,20 @@ let cachedVersions = { ...ALL_VERSIONS };
 let vanillaManifest = {};
 
 async function loadVersions() {
+    // Keep our 26.x versions at the top always
+    const snapshot26 = ['26.3', '26.2', '26.1', '26.0', '25.1', '25.0'];
     try {
         const manifest = JSON.parse(execSync('wget -qO- "https://launchermeta.mojang.com/mc/game/version_manifest.json"', { timeout: 15000 }).toString());
-        cachedVersions.vanilla = manifest.versions.filter(v => v.type === 'release').map(v => v.id).slice(0, 40);
+        const mojangVersions = manifest.versions.filter(v => v.type === 'release').map(v => v.id).slice(0, 30);
+        // Merge: 26.x first, then Mojang versions
+        cachedVersions.vanilla = [...snapshot26, ...mojangVersions];
         manifest.versions.forEach(v => { if (v.type === 'release') vanillaManifest[v.id] = v.url; });
         const paper = JSON.parse(execSync('wget -qO- "https://api.papermc.io/v2/projects/paper"', { timeout: 15000 }).toString());
         if (paper.versions) cachedVersions.paper = paper.versions.reverse().slice(0, 30);
-    } catch (e) {}
+    } catch (e) {
+        // If fetch fails, use defaults
+        log('Version fetch failed, using defaults');
+    }
 }
 
 function loadConfig() { try { if (fs.existsSync(CONFIG_FILE)) config = { ...config, ...JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8')) }; } catch (e) {} }
