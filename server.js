@@ -94,11 +94,11 @@ async function installPlayit() {
     if (fs.existsSync(playitBin)) {
         return true;
     }
-    log('Installing playit.gg (musl build)...');
+    log('Installing playit.gg...');
     try {
         ensureDirs();
         // Use the musl/static build for Alpine Linux
-        execSync(`wget -q -O ${playitBin} "https://github.com/playit-cloud/playit-agent/releases/download/v0.15.26/playit-linux_amd64-musl"`, { timeout: 120000 });
+        execSync(`wget -q -O ${playitBin} "https://builds.playit.gg/1.0.10/playit-linux-amd64"`, { timeout: 120000 });
         execSync(`chmod +x ${playitBin}`);
         log('playit.gg installed');
         return true;
