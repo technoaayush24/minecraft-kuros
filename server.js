@@ -303,6 +303,11 @@ async function changeServer(newType, newVersion) {
         return { error: 'Invalid version' };
     }
     
+    // Don't change if same version
+    if (config.serverType === newType && config.version === newVersion) {
+        return { success: true, message: 'Already on this version' };
+    }
+    
     const wasRunning = !!mcProcess;
     
     // Stop server if running and wait for it to fully stop
@@ -310,7 +315,6 @@ async function changeServer(newType, newVersion) {
         log('Stopping server for version change...');
         if (mcProcess) {
             mcProcess.stdin.write('stop\n');
-            // Wait up to 30 seconds for graceful stop
             await new Promise(resolve => {
                 const checkInterval = setInterval(() => {
                     if (!mcProcess) {
@@ -328,8 +332,19 @@ async function changeServer(newType, newVersion) {
                 }, 30000);
             });
         }
-        // Extra wait to ensure everything is closed
         await new Promise(r => setTimeout(r, 2000));
+    }
+    
+    // Auto-backup world before version change (if world exists)
+    const worldDir = SERVER_DIR + '/world';
+    if (fs.existsSync(worldDir)) {
+        const backupName = `world-before-${newType}-${newVersion}-${Date.now()}`;
+        try {
+            execSync(`cp -r ${worldDir} ${BACKUPS_DIR}/${backupName}`);
+            log(`📦 Auto-backup created: ${backupName}`);
+        } catch(e) {
+            log('Backup failed, continuing anyway...');
+        }
     }
     
     // Update config
@@ -337,17 +352,16 @@ async function changeServer(newType, newVersion) {
     config.version = newVersion;
     saveConfig();
     
-    // Clean up old files
-    log('Cleaning old server files...');
+    // Clean up server files BUT KEEP THE WORLD
+    log('Updating server files (keeping world)...');
     try { fs.unlinkSync(SERVER_DIR + '/server.jar'); } catch(e) {}
     try { execSync(`rm -rf ${SERVER_DIR}/.fabric ${SERVER_DIR}/libraries ${SERVER_DIR}/.mixin* ${SERVER_DIR}/versions`); } catch(e) {}
     
-    log(`Changed to ${newType} ${newVersion}`);
+    log(`✓ Changed to ${newType} ${newVersion}`);
     status = 'stopped';
     broadcast({ type: 'status', status });
     
     if (wasRunning) {
-        // Small delay before restart
         await new Promise(r => setTimeout(r, 1000));
         return startServer();
     }
