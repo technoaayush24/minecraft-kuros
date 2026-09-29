@@ -34,11 +34,15 @@ function ensureDirs() {
 }
 
 function getJavaVersion(mcVersion) {
-    const ver = mcVersion.split('.').map(Number);
-    const minor = ver[1] || 0, patch = ver[2] || 0;
+    // Parse version like "1.21.4" or "1.20.1"
+    const match = mcVersion.match(/^1\.(\d+)(?:\.(\d+))?/);
+    if (!match) return 21; // Default to Java 21 for safety
+    const minor = parseInt(match[1]) || 0;
+    const patch = parseInt(match[2]) || 0;
     if (minor >= 21) return 21;
     if (minor === 20 && patch >= 5) return 21;
     if (minor >= 17) return 17;
+    if (minor >= 12) return 8;
     return 8;
 }
 
@@ -297,69 +301,83 @@ async function restartServer() {
 }
 
 async function changeServer(newType, newVersion) {
-    // Validate version
-    if (!cachedVersions[newType]?.includes(newVersion)) {
-        log(`Invalid version: ${newType} ${newVersion}`);
-        return { error: 'Invalid version' };
+    // Strict validation - version must be in our list
+    const validVersions = cachedVersions[newType] || [];
+    if (!validVersions.includes(newVersion)) {
+        log(`❌ Invalid version: ${newType} ${newVersion}`);
+        log(`Valid versions: ${validVersions.slice(0, 10).join(', ')}...`);
+        return { error: 'Invalid version. Select from dropdown.' };
+    }
+    
+    // Must start with "1." (Minecraft versions are 1.x.x)
+    if (!newVersion.match(/^1\.\d+/)) {
+        log(`❌ Invalid version format: ${newVersion}`);
+        return { error: 'Invalid version format' };
     }
     
     // Don't change if same version
     if (config.serverType === newType && config.version === newVersion) {
+        log('Already on this version');
         return { success: true, message: 'Already on this version' };
     }
     
     const wasRunning = !!mcProcess;
     
-    // Stop server if running and wait for it to fully stop
-    if (wasRunning) {
+    // Force stop server if running
+    if (mcProcess) {
         log('Stopping server for version change...');
-        if (mcProcess) {
-            mcProcess.stdin.write('stop\n');
-            await new Promise(resolve => {
-                const checkInterval = setInterval(() => {
-                    if (!mcProcess) {
-                        clearInterval(checkInterval);
-                        resolve();
-                    }
-                }, 500);
-                setTimeout(() => {
-                    clearInterval(checkInterval);
-                    if (mcProcess) {
-                        mcProcess.kill('SIGKILL');
-                        mcProcess = null;
-                    }
-                    resolve();
-                }, 30000);
-            });
+        status = 'stopping';
+        broadcast({ type: 'status', status });
+        
+        // Try graceful stop first
+        try { mcProcess.stdin.write('stop\n'); } catch(e) {}
+        
+        // Wait max 15 seconds for graceful stop
+        let waited = 0;
+        while (mcProcess && waited < 15000) {
+            await new Promise(r => setTimeout(r, 500));
+            waited += 500;
         }
+        
+        // Force kill if still running
+        if (mcProcess) {
+            log('Force stopping server...');
+            try { mcProcess.kill('SIGKILL'); } catch(e) {}
+            mcProcess = null;
+        }
+        
+        // Wait for process cleanup
         await new Promise(r => setTimeout(r, 2000));
+        status = 'stopped';
+        broadcast({ type: 'status', status });
     }
     
-    // Auto-backup world before version change (if world exists)
+    // Auto-backup world before version change
     const worldDir = SERVER_DIR + '/world';
     if (fs.existsSync(worldDir)) {
-        const backupName = `world-before-${newType}-${newVersion}-${Date.now()}`;
+        const backupName = `backup-before-${newVersion}`;
         try {
+            // Remove old backup with same name if exists
+            try { execSync(`rm -rf ${BACKUPS_DIR}/${backupName}`); } catch(e) {}
             execSync(`cp -r ${worldDir} ${BACKUPS_DIR}/${backupName}`);
-            log(`📦 Auto-backup created: ${backupName}`);
+            log(`📦 Auto-backup: ${backupName}`);
         } catch(e) {
-            log('Backup failed, continuing anyway...');
+            log('Backup warning: ' + e.message);
         }
     }
     
     // Update config
+    const oldVersion = config.version;
     config.serverType = newType;
     config.version = newVersion;
     saveConfig();
     
     // Clean up server files BUT KEEP THE WORLD
-    log('Updating server files (keeping world)...');
+    log(`Switching ${oldVersion} → ${newVersion}...`);
     try { fs.unlinkSync(SERVER_DIR + '/server.jar'); } catch(e) {}
-    try { execSync(`rm -rf ${SERVER_DIR}/.fabric ${SERVER_DIR}/libraries ${SERVER_DIR}/.mixin* ${SERVER_DIR}/versions`); } catch(e) {}
+    try { execSync(`rm -rf ${SERVER_DIR}/.fabric ${SERVER_DIR}/libraries ${SERVER_DIR}/.mixin* ${SERVER_DIR}/versions ${SERVER_DIR}/*.json 2>/dev/null || true`); } catch(e) {}
     
-    log(`✓ Changed to ${newType} ${newVersion}`);
-    status = 'stopped';
-    broadcast({ type: 'status', status });
+    log(`✓ Ready for ${newType} ${newVersion}`);
     
     if (wasRunning) {
         await new Promise(r => setTimeout(r, 1000));
