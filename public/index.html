@@ -233,8 +233,13 @@
                         <p style="font-size:10px;color:var(--text2);margin-top:8px">Reset deletes the world. A new one generates on restart.</p>
                     </div>
                     <div class="world-card">
-                        <div class="world-title">Backups</div>
+                        <div class="world-title">Local Backups</div>
                         <div id="backupsList"></div>
+                    </div>
+                    <div class="world-card">
+                        <div class="world-title">☁️ Cloud Backups (Pixxo)</div>
+                        <button class="btn btn-primary btn-sm" onclick="cloudBackup()" style="margin-bottom:8px">Upload to Cloud</button>
+                        <div id="cloudBackupsList"></div>
                     </div>
                 </div>
             </div>
@@ -253,7 +258,7 @@
             document.querySelector(`.tab[onclick="showTab('${name}')"]`).classList.add('active');
             if (name === 'files') loadFiles();
             if (name === 'plugins') loadPlugins();
-            if (name === 'world') loadBackups();
+            if (name === 'world') { loadBackups(); loadCloudBackups(); }
         }
         
         function connect() {
@@ -430,6 +435,43 @@
             if (!confirm('Delete backup ' + name + '?')) return;
             await fetch('/api/world/delete-backup', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) });
             loadBackups();
+        }
+        
+        async function cloudBackup() {
+            if (!confirm('Upload world to cloud?')) return;
+            $('cloudBackupsList').innerHTML = '<div style="color:var(--yellow);font-size:11px">Uploading...</div>';
+            const res = await fetch('/api/cloud/backup', { method: 'POST' }).then(r=>r.json());
+            if (res.error) alert('Failed: ' + res.error);
+            loadCloudBackups();
+        }
+        
+        async function loadCloudBackups() {
+            const res = await fetch('/api/cloud/list').then(r=>r.json());
+            if (res.error) {
+                $('cloudBackupsList').innerHTML = '<div style="color:var(--text2);font-size:11px">'+res.error+'</div>';
+                return;
+            }
+            if (!res.length) {
+                $('cloudBackupsList').innerHTML = '<div style="color:var(--text2);font-size:11px">No cloud backups</div>';
+                return;
+            }
+            $('cloudBackupsList').innerHTML = res.map(b => `<div class="backup-item"><span style="font-size:10px">${b.name.replace('mc-backup-','')}</span><div><button class="btn btn-sm btn-secondary" onclick="restoreCloud('${b.fileId}')">Restore</button> <button class="btn btn-sm btn-danger" onclick="deleteCloud('${b.fileId}')">Delete</button></div></div>`).join('');
+        }
+        
+        async function restoreCloud(fileId) {
+            if (status === 'running') return alert('Stop server first');
+            if (!confirm('Restore from cloud? This will replace current world.')) return;
+            $('cloudBackupsList').innerHTML = '<div style="color:var(--yellow);font-size:11px">Downloading...</div>';
+            const res = await fetch('/api/cloud/restore', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({fileId}) }).then(r=>r.json());
+            if (res.error) alert('Failed: ' + res.error);
+            else alert('Restored! Server type/version may have changed.');
+            loadCloudBackups();
+        }
+        
+        async function deleteCloud(fileId) {
+            if (!confirm('Delete cloud backup?')) return;
+            await fetch('/api/cloud/delete', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({fileId}) });
+            loadCloudBackups();
         }
         
         setInterval(() => {
