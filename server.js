@@ -11,13 +11,12 @@ const wss = new WebSocket.Server({ server, path: '/ws' });
 app.use(express.json());
 app.use(express.static('public'));
 
-// PERSISTENT DATA
-const DATA_DIR = '/data';
+// Use /tmp for data (writable on Kuros)
+const DATA_DIR = '/tmp/mcdata';
 const SERVERS_DIR = DATA_DIR + '/servers';
 const JAVA_DIR = DATA_DIR + '/java';
 const CONFIG_FILE = DATA_DIR + '/config.json';
 const PLAYIT_DIR = DATA_DIR + '/playit';
-const PLAYIT_CONFIG = PLAYIT_DIR + '/playit.toml';
 
 let mcProcess = null;
 let playitProcess = null;
@@ -106,7 +105,6 @@ async function installPlayit() {
     log('Installing playit.gg tunnel...');
     try {
         ensureDirs();
-        // Use specific version that works
         execSync(`wget -q -O ${playitBin} "https://builds.playit.gg/1.0.10/playit-linux-amd64"`, { timeout: 120000 });
         execSync(`chmod +x ${playitBin}`);
         log('playit.gg installed');
@@ -118,11 +116,7 @@ async function installPlayit() {
 }
 
 async function startTunnel() {
-    if (playitProcess) {
-        log('Tunnel already running');
-        return;
-    }
-    
+    if (playitProcess) return;
     if (!await installPlayit()) return;
     
     log('Starting tunnel...');
@@ -130,25 +124,16 @@ async function startTunnel() {
     broadcast({ type: 'tunnel', status: tunnelStatus });
     
     const playitBin = PLAYIT_DIR + '/playit';
-    const args = [];
     
-    // If we have a saved config, use it
-    if (fs.existsSync(PLAYIT_CONFIG)) {
-        args.push('-c', PLAYIT_CONFIG);
-    }
-    
-    playitProcess = spawn(playitBin, args, { 
+    playitProcess = spawn(playitBin, [], { 
         cwd: PLAYIT_DIR,
         env: { ...process.env, HOME: PLAYIT_DIR }
     });
     
-    let outputBuffer = '';
-    
     playitProcess.stdout.on('data', (data) => {
         const text = data.toString();
-        outputBuffer += text;
+        console.log('[playit]', text);
         
-        // Look for claim URL (first time setup)
         const claimMatch = text.match(/https:\/\/playit\.gg\/claim\/[\w-]+/);
         if (claimMatch) {
             tunnelAddress = claimMatch[0];
@@ -157,8 +142,6 @@ async function startTunnel() {
             broadcast({ type: 'tunnel', status: 'claim', url: tunnelAddress });
         }
         
-        // Look for tunnel address (after claimed)
-        // Format varies: "address allocated: xxx.ply.gg:12345" or just "xxx.ply.gg:12345"
         const addrMatch = text.match(/([a-z0-9-]+\.(?:at\.playit\.gg|ply\.gg):\d+)/i);
         if (addrMatch) {
             tunnelAddress = addrMatch[1];
@@ -166,17 +149,11 @@ async function startTunnel() {
             log('✅ TUNNEL READY: ' + tunnelAddress);
             broadcast({ type: 'tunnel', status: 'connected', address: tunnelAddress });
         }
-        
-        // Also check for "tunnel created" or similar success messages
-        if (text.includes('tunnel') && text.includes('created')) {
-            tunnelStatus = 'connected';
-            broadcast({ type: 'tunnel', status: tunnelStatus });
-        }
     });
     
     playitProcess.stderr.on('data', (data) => {
         const text = data.toString();
-        // Check stderr too for addresses
+        console.log('[playit err]', text);
         const addrMatch = text.match(/([a-z0-9-]+\.(?:at\.playit\.gg|ply\.gg):\d+)/i);
         if (addrMatch) {
             tunnelAddress = addrMatch[1];
@@ -193,12 +170,6 @@ async function startTunnel() {
         tunnelAddress = null;
         broadcast({ type: 'tunnel', status: 'stopped' });
     });
-    
-    playitProcess.on('error', (err) => {
-        log('Tunnel error: ' + err.message);
-        tunnelStatus = 'error';
-        broadcast({ type: 'tunnel', status: 'error', message: err.message });
-    });
 }
 
 function stopTunnel() {
@@ -208,7 +179,6 @@ function stopTunnel() {
         tunnelStatus = 'stopped';
         tunnelAddress = null;
         broadcast({ type: 'tunnel', status: 'stopped' });
-        log('Tunnel stopped');
     }
 }
 
@@ -331,7 +301,7 @@ simulation-distance=4
 spawn-protection=0
 difficulty=normal
 gamemode=survival
-motd=\\u00a7b\\u00a7lKuros MC\\u00a7r - ${config.serverType} ${config.version}
+motd=\\u00a7b\\u00a7lKuros MC\\u00a7r
 enable-command-block=true
 `.trim());
     }
@@ -358,7 +328,7 @@ async function startServer() {
     createConfigs();
     saveConfig();
     
-    const maxMem = 450;
+    const maxMem = 400;
     let cmd, args;
     
     if (config.serverType === 'neoforge' && fs.existsSync(serverDir + '/run.sh')) {
