@@ -251,6 +251,8 @@ gamemode=survival
 motd=\\u00a7bKuros MC Server
 enable-command-block=true
 max-tick-time=120000
+white-list=false
+enforce-whitelist=false
 `);
 }
 
@@ -554,87 +556,123 @@ const pixxo = new Pixxo({
     password: "password123"
 });
 
+const CLOUD_INDEX_FILE = DATA_DIR + '/cloud_backups.json';
+
+function loadCloudIndex() {
+    try {
+        if (fs.existsSync(CLOUD_INDEX_FILE)) {
+            return JSON.parse(fs.readFileSync(CLOUD_INDEX_FILE, 'utf8'));
+        }
+    } catch(e) {}
+    return [];
+}
+
+function saveCloudIndex(index) {
+    ensureDirs();
+    fs.writeFileSync(CLOUD_INDEX_FILE, JSON.stringify(index, null, 2));
+}
+
 async function createCloudBackup() {
     const worldDir = SERVER_DIR + '/world';
     if (!fs.existsSync(worldDir)) return { error: 'No world to backup' };
     
-    log('Creating cloud backup...');
-    const timestamp = Date.now();
-    const backupName = `mc-backup-${config.serverType}-${config.version}-${timestamp}`;
-    const zipPath = `/tmp/${backupName}.zip`;
+    log('☁️ Creating cloud backup...');
+    broadcast({ type: 'log', data: '☁️ Compressing world...' });
     
-    // Create snapshot metadata
+    const timestamp = Date.now();
+    const backupName = `${config.serverType}-${config.version}-${new Date().toISOString().slice(0,10)}`;
+    const zipPath = `/tmp/mc-${timestamp}.zip`;
+    
+    // Snapshot metadata
     const snapshot = {
         timestamp,
+        date: new Date().toISOString(),
         serverType: config.serverType,
         version: config.version,
         plugins: fs.existsSync(SERVER_DIR + '/plugins') ? fs.readdirSync(SERVER_DIR + '/plugins').filter(f => f.endsWith('.jar')) : [],
-        mods: fs.existsSync(SERVER_DIR + '/mods') ? fs.readdirSync(SERVER_DIR + '/mods').filter(f => f.endsWith('.jar')) : [],
-        settings: fs.existsSync(SERVER_DIR + '/server.properties') ? fs.readFileSync(SERVER_DIR + '/server.properties', 'utf8') : ''
+        mods: fs.existsSync(SERVER_DIR + '/mods') ? fs.readdirSync(SERVER_DIR + '/mods').filter(f => f.endsWith('.jar')) : []
     };
     
-    // Create zip with world + metadata
-    await new Promise((resolve, reject) => {
-        const output = fs.createWriteStream(zipPath);
-        const archive = archiver('zip', { zlib: { level: 9 } });
-        output.on('close', resolve);
-        archive.on('error', reject);
-        archive.pipe(output);
-        archive.directory(worldDir, 'world');
-        archive.append(JSON.stringify(snapshot, null, 2), { name: 'snapshot.json' });
-        if (fs.existsSync(SERVER_DIR + '/server.properties')) archive.file(SERVER_DIR + '/server.properties', { name: 'server.properties' });
-        archive.finalize();
-    });
-    
-    // Upload to Pixxo
     try {
+        // Create zip
+        await new Promise((resolve, reject) => {
+            const output = fs.createWriteStream(zipPath);
+            const archive = archiver('zip', { zlib: { level: 9 } });
+            output.on('close', resolve);
+            archive.on('error', reject);
+            archive.pipe(output);
+            archive.directory(worldDir, 'world');
+            archive.append(JSON.stringify(snapshot, null, 2), { name: 'snapshot.json' });
+            if (fs.existsSync(SERVER_DIR + '/server.properties')) {
+                archive.file(SERVER_DIR + '/server.properties', { name: 'server.properties' });
+            }
+            archive.finalize();
+        });
+        
+        broadcast({ type: 'log', data: '☁️ Uploading to cloud...' });
+        
+        // Upload to Pixxo
         const result = await pixxo.upload({
             file: fs.readFileSync(zipPath),
             fileName: `${backupName}.zip`,
             folder: "/minecraft-backups"
         });
-        fs.unlinkSync(zipPath);
-        log(`☁️ Cloud backup: ${backupName}`);
-        return { success: true, name: backupName, url: result.url, fileId: result.fileId };
+        
+        // Save to local index
+        const index = loadCloudIndex();
+        index.unshift({
+            name: backupName,
+            fileId: result.fileId,
+            url: result.url,
+            snapshot,
+            uploadedAt: new Date().toISOString()
+        });
+        // Keep only last 10
+        if (index.length > 10) index.length = 10;
+        saveCloudIndex(index);
+        
+        // Cleanup
+        try { fs.unlinkSync(zipPath); } catch(e) {}
+        
+        log('☁️ Backup uploaded: ' + backupName);
+        return { success: true, name: backupName };
     } catch (e) {
-        log('Cloud backup failed: ' + e.message);
+        log('☁️ Upload failed: ' + e.message);
         try { fs.unlinkSync(zipPath); } catch(x) {}
         return { error: e.message };
     }
 }
 
-async function listCloudBackups() {
-    try {
-        const files = await pixxo.listFiles({ path: "/minecraft-backups" });
-        return files.filter(f => f.name.startsWith('mc-backup-')).map(f => ({
-            name: f.name.replace('.zip', ''),
-            fileId: f.fileId,
-            url: f.url,
-            size: f.size,
-            created: f.createdAt
-        }));
-    } catch (e) {
-        return { error: e.message };
-    }
+function listCloudBackups() {
+    return loadCloudIndex();
 }
 
 async function restoreCloudBackup(fileId) {
     if (mcProcess) return { error: 'Stop server first' };
     
-    log('Downloading cloud backup...');
+    const index = loadCloudIndex();
+    const backup = index.find(b => b.fileId === fileId);
+    if (!backup) return { error: 'Backup not found' };
+    
+    log('☁️ Downloading backup...');
+    broadcast({ type: 'log', data: '☁️ Downloading from cloud...' });
+    
     try {
-        const file = await pixxo.getFileDetails(fileId);
         const zipPath = `/tmp/restore-${Date.now()}.zip`;
+        const extractDir = `/tmp/restore-${Date.now()}`;
         
-        // Download file
-        execSync(`wget -q -O "${zipPath}" "${file.url}"`, { timeout: 300000 });
+        // Download
+        execSync(`wget -q -O "${zipPath}" "${backup.url}"`, { timeout: 300000 });
         
         // Extract
-        const extractDir = `/tmp/restore-${Date.now()}`;
-        execSync(`mkdir -p ${extractDir} && cd ${extractDir} && unzip -q ${zipPath}`);
+        execSync(`mkdir -p ${extractDir} && unzip -q ${zipPath} -d ${extractDir}`);
         
-        // Read snapshot
-        const snapshot = JSON.parse(fs.readFileSync(`${extractDir}/snapshot.json`, 'utf8'));
+        // Backup current world first
+        if (fs.existsSync(SERVER_DIR + '/world')) {
+            const localBackup = `world-before-restore-${Date.now()}`;
+            execSync(`cp -r ${SERVER_DIR}/world ${BACKUPS_DIR}/${localBackup}`);
+            log('📦 Local backup: ' + localBackup);
+        }
         
         // Restore world
         execSync(`rm -rf ${SERVER_DIR}/world && mv ${extractDir}/world ${SERVER_DIR}/`);
@@ -644,18 +682,20 @@ async function restoreCloudBackup(fileId) {
             fs.copyFileSync(`${extractDir}/server.properties`, SERVER_DIR + '/server.properties');
         }
         
-        // Update config to match backup
-        config.serverType = snapshot.serverType;
-        config.version = snapshot.version;
-        saveConfig();
+        // Update config
+        if (backup.snapshot) {
+            config.serverType = backup.snapshot.serverType;
+            config.version = backup.snapshot.version;
+            saveConfig();
+        }
         
         // Cleanup
         execSync(`rm -rf ${extractDir} ${zipPath}`);
         
-        log(`☁️ Restored: ${snapshot.serverType} ${snapshot.version}`);
-        return { success: true, snapshot };
+        log('☁️ Restored: ' + backup.name);
+        return { success: true, backup };
     } catch (e) {
-        log('Restore failed: ' + e.message);
+        log('☁️ Restore failed: ' + e.message);
         return { error: e.message };
     }
 }
@@ -663,14 +703,17 @@ async function restoreCloudBackup(fileId) {
 async function deleteCloudBackup(fileId) {
     try {
         await pixxo.deleteFile(fileId);
+        const index = loadCloudIndex().filter(b => b.fileId !== fileId);
+        saveCloudIndex(index);
+        log('☁️ Deleted cloud backup');
         return { success: true };
     } catch (e) {
         return { error: e.message };
     }
 }
 
-// Add routes
+// Cloud routes
 app.post('/api/cloud/backup', async (req, res) => res.json(await createCloudBackup()));
-app.get('/api/cloud/list', async (req, res) => res.json(await listCloudBackups()));
+app.get('/api/cloud/list', (req, res) => res.json(listCloudBackups()));
 app.post('/api/cloud/restore', async (req, res) => res.json(await restoreCloudBackup(req.body.fileId)));
 app.post('/api/cloud/delete', async (req, res) => res.json(await deleteCloudBackup(req.body.fileId)));

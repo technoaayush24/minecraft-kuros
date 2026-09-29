@@ -107,6 +107,20 @@
         .input-row { display: flex; gap: 6px; margin-top: 8px; }
         .input-row input { flex: 1; padding: 6px 8px; background: var(--surface); border: 1px solid var(--border); border-radius: 4px; color: var(--text); font-size: 11px; }
         
+        
+        /* Modal */
+        .modal-overlay { position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.7); display:none; align-items:center; justify-content:center; z-index:1000; }
+        .modal-overlay.show { display:flex; }
+        .modal { background:var(--surface); border-radius:12px; padding:20px; max-width:400px; width:90%; }
+        .modal-title { font-size:14px; font-weight:600; margin-bottom:12px; }
+        .modal-text { font-size:12px; color:var(--text2); margin-bottom:16px; }
+        .modal-btns { display:flex; gap:8px; justify-content:flex-end; }
+        .toast { position:fixed; bottom:20px; right:20px; padding:12px 20px; border-radius:8px; font-size:12px; z-index:1001; animation:slideIn 0.3s; }
+        .toast.success { background:var(--accent); color:#000; }
+        .toast.error { background:var(--red); color:#fff; }
+        .toast.info { background:var(--blue); color:#fff; }
+        @keyframes slideIn { from { transform:translateX(100%); opacity:0; } to { transform:translateX(0); opacity:1; } }
+
         @media (max-width: 768px) { .layout { grid-template-columns: 1fr; } .sidebar { display: none; } }
     </style>
 </head>
@@ -402,7 +416,7 @@
         }
         
         async function removePlugin(name, type) {
-            if (!confirm('Remove ' + name + '?')) return;
+            showModal('Remove Plugin', 'Remove ' + name + '?', 'Remove', async () => {
             await fetch('/api/plugins/remove', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, type }) });
             loadPlugins();
         }
@@ -420,9 +434,8 @@
         }
         
         async function resetWorld() {
-            if (!confirm('Delete world? This cannot be undone!')) return;
-            await fetch('/api/world/reset', { method: 'POST' });
-            loadBackups();
+            showModal('⚠️ Reset World', 'Delete world permanently? This cannot be undone!', 'Delete', async () => {
+            await fetch('/api/world/reset', { method: 'POST' }); toast('World reset', 'success'); loadBackups(); }); return
         }
         
         async function restoreBackup(name) {
@@ -437,41 +450,68 @@
             loadBackups();
         }
         
+        // Modal & Toast
+        let modalCallback = null;
+        function showModal(title, text, confirmText, callback) {
+            $('modalTitle').textContent = title;
+            $('modalText').textContent = text;
+            $('modalConfirm').textContent = confirmText || 'Confirm';
+            $('modalConfirm').className = confirmText === 'Delete' ? 'btn btn-danger' : 'btn btn-primary';
+            modalCallback = callback;
+            $('modal').classList.add('show');
+        }
+        function closeModal() { $('modal').classList.remove('show'); modalCallback = null; }
+        $('modalConfirm').onclick = () => { if(modalCallback) modalCallback(); closeModal(); };
+        
+        function toast(msg, type='info') {
+            const t = document.createElement('div');
+            t.className = 'toast ' + type;
+            t.textContent = msg;
+            document.getElementById('toastContainer').appendChild(t);
+            setTimeout(() => t.remove(), 3000);
+        }
+        
         async function cloudBackup() {
-            if (!confirm('Upload world to cloud?')) return;
-            $('cloudBackupsList').innerHTML = '<div style="color:var(--yellow);font-size:11px">Uploading...</div>';
-            const res = await fetch('/api/cloud/backup', { method: 'POST' }).then(r=>r.json());
-            if (res.error) alert('Failed: ' + res.error);
-            loadCloudBackups();
+            showModal('☁️ Cloud Backup', 'Upload current world to Pixxo cloud?', 'Upload', async () => {
+                toast('Uploading...', 'info');
+                const res = await fetch('/api/cloud/backup', { method: 'POST' }).then(r=>r.json());
+                if (res.error) toast('Failed: ' + res.error, 'error');
+                else toast('Backup uploaded!', 'success');
+                loadCloudBackups();
+            });
         }
         
         async function loadCloudBackups() {
             const res = await fetch('/api/cloud/list').then(r=>r.json());
-            if (res.error) {
-                $('cloudBackupsList').innerHTML = '<div style="color:var(--text2);font-size:11px">'+res.error+'</div>';
+            if (!res || !res.length) {
+                $('cloudBackupsList').innerHTML = '<div style="color:var(--text2);font-size:11px">No cloud backups yet</div>';
                 return;
             }
-            if (!res.length) {
-                $('cloudBackupsList').innerHTML = '<div style="color:var(--text2);font-size:11px">No cloud backups</div>';
-                return;
-            }
-            $('cloudBackupsList').innerHTML = res.map(b => `<div class="backup-item"><span style="font-size:10px">${b.name.replace('mc-backup-','')}</span><div><button class="btn btn-sm btn-secondary" onclick="restoreCloud('${b.fileId}')">Restore</button> <button class="btn btn-sm btn-danger" onclick="deleteCloud('${b.fileId}')">Delete</button></div></div>`).join('');
+            $('cloudBackupsList').innerHTML = res.map(b => {
+                const info = b.snapshot ? `${b.snapshot.serverType} ${b.snapshot.version}` : b.name;
+                const date = b.uploadedAt ? new Date(b.uploadedAt).toLocaleDateString() : '';
+                return `<div class="backup-item"><div><div style="font-size:11px">${info}</div><div style="font-size:9px;color:var(--text2)">${date}</div></div><div><button class="btn btn-sm btn-secondary" onclick="restoreCloud('${b.fileId}','${info}')">Restore</button> <button class="btn btn-sm btn-danger" onclick="deleteCloud('${b.fileId}')">×</button></div></div>`;
+            }).join('');
         }
         
-        async function restoreCloud(fileId) {
-            if (status === 'running') return alert('Stop server first');
-            if (!confirm('Restore from cloud? This will replace current world.')) return;
-            $('cloudBackupsList').innerHTML = '<div style="color:var(--yellow);font-size:11px">Downloading...</div>';
-            const res = await fetch('/api/cloud/restore', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({fileId}) }).then(r=>r.json());
-            if (res.error) alert('Failed: ' + res.error);
-            else alert('Restored! Server type/version may have changed.');
-            loadCloudBackups();
+        async function restoreCloud(fileId, name) {
+            if (status === 'running') { toast('Stop server first!', 'error'); return; }
+            showModal('☁️ Restore Backup', `Restore "${name}"? Current world will be backed up locally first.`, 'Restore', async () => {
+                toast('Downloading...', 'info');
+                const res = await fetch('/api/cloud/restore', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({fileId}) }).then(r=>r.json());
+                if (res.error) toast('Failed: ' + res.error, 'error');
+                else toast('Restored! Start server to play.', 'success');
+                loadCloudBackups();
+                loadBackups();
+            });
         }
         
         async function deleteCloud(fileId) {
-            if (!confirm('Delete cloud backup?')) return;
-            await fetch('/api/cloud/delete', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({fileId}) });
-            loadCloudBackups();
+            showModal('Delete Backup', 'Delete this cloud backup permanently?', 'Delete', async () => {
+                await fetch('/api/cloud/delete', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({fileId}) });
+                toast('Deleted', 'success');
+                loadCloudBackups();
+            });
         }
         
         setInterval(() => {
@@ -483,5 +523,18 @@
         
         connect();
     </script>
+
+    <div class="modal-overlay" id="modal">
+        <div class="modal">
+            <div class="modal-title" id="modalTitle">Confirm</div>
+            <div class="modal-text" id="modalText">Are you sure?</div>
+            <div class="modal-btns">
+                <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+                <button class="btn btn-primary" id="modalConfirm">Confirm</button>
+            </div>
+        </div>
+    </div>
+    <div id="toastContainer"></div>
+
 </body>
 </html>
