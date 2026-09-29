@@ -34,7 +34,10 @@ function ensureDirs() {
 }
 
 function getJavaVersion(mcVersion) {
-    // Parse version like "1.21.4" or "1.20.1"
+    // New MC versions (26.x, 25.x, etc.) need Java 21
+    if (mcVersion.match(/^2[0-9]\./)) return 21;
+    
+    // Parse old-style version like "1.21.4" or "1.20.1"
     const match = mcVersion.match(/^1\.(\d+)(?:\.(\d+))?/);
     if (!match) return 21; // Default to Java 21 for safety
     const minor = parseInt(match[1]) || 0;
@@ -49,7 +52,7 @@ function getJavaVersion(mcVersion) {
 function getJavaDir(mcVersion) { return `${JAVA_DIR}/jre${getJavaVersion(mcVersion)}`; }
 
 const ALL_VERSIONS = {
-    vanilla: ['1.21.4', '1.21.3', '1.21.1', '1.21', '1.20.6', '1.20.4', '1.20.1', '1.19.4', '1.18.2', '1.16.5', '1.12.2', '1.8.9'],
+    vanilla: ['26.3', '26.2', '26.1', '26.0', '25.1', '25.0', '1.21.4', '1.21.3', '1.21.1', '1.21', '1.20.6', '1.20.4', '1.20.1', '1.19.4', '1.18.2', '1.16.5', '1.12.2', '1.8.9'],
     paper: ['1.21.4', '1.21.3', '1.21.1', '1.21', '1.20.6', '1.20.4', '1.20.1', '1.19.4', '1.18.2', '1.16.5'],
     fabric: ['1.21.4', '1.21.3', '1.21.1', '1.21', '1.20.6', '1.20.4', '1.20.1', '1.19.4', '1.18.2']
 };
@@ -309,8 +312,8 @@ async function changeServer(newType, newVersion) {
         return { error: 'Invalid version. Select from dropdown.' };
     }
     
-    // Must start with "1." (Minecraft versions are 1.x.x)
-    if (!newVersion.match(/^1\.\d+/)) {
+    // Minecraft versions: old style (1.x.x) or new style (26.x)
+    if (!newVersion.match(/^(1\.\d+|2[0-9]\.\d+)/)) {
         log(`❌ Invalid version format: ${newVersion}`);
         return { error: 'Invalid version format' };
     }
