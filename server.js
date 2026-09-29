@@ -95,7 +95,7 @@ function getJavaVersion(mcVersion) {
     const patch = parseInt(match[2]) || 0;
     
     // Java 21: MC 1.20.5 - 1.21.x
-    if (minor >= 21) return 21;
+    if (minor >= 21) return 25; // Paper 26+ needs Java 25
     if (minor === 20 && patch >= 5) return 21;
     
     // Java 17: MC 1.18 - 1.20.4
@@ -330,33 +330,12 @@ enforce-whitelist=false
 
 
 // === Performance Optimization ===
-const SPARK_URL = 'https://ci.lucko.me/job/spark/lastSuccessfulBuild/artifact/spark-bukkit/build/libs/spark-1.10.119-bukkit.jar';
-const CLEARLAGG_URL = 'https://github.com/bob7l/ClearLag/releases/download/v3.2.2/ClearLag-3.2.2.jar';
+// Note: Paper 26+ includes Spark profiler built-in, no separate plugin needed
 
 async function installOptimizationPlugins() {
     if (config.serverType !== 'paper') return;
-    const pluginsDir = SERVER_DIR + '/plugins';
-    ensureDirs();
-    
-    // Install Spark if not exists
-    const sparkExists = fs.readdirSync(pluginsDir).some(f => f.toLowerCase().includes('spark'));
-    if (!sparkExists) {
-        log('[Optimize] Installing Spark profiler...');
-        try {
-            execSync(`wget -q -O "${pluginsDir}/spark.jar" "${SPARK_URL}"`, { timeout: 60000 });
-            log('[Optimize] Spark installed');
-        } catch (e) { log('[Optimize] Spark install failed: ' + e.message); }
-    }
-    
-    // Install ClearLagg if not exists
-    const clearlaggExists = fs.readdirSync(pluginsDir).some(f => f.toLowerCase().includes('clearlag'));
-    if (!clearlaggExists) {
-        log('[Optimize] Installing ClearLagg...');
-        try {
-            execSync(`wget -q -O "${pluginsDir}/ClearLagg.jar" "${CLEARLAGG_URL}"`, { timeout: 60000 });
-            log('[Optimize] ClearLagg installed');
-        } catch (e) { log('[Optimize] ClearLagg install failed: ' + e.message); }
-    }
+    log('[Optimize] Paper 26+ includes Spark profiler built-in');
+    log('[Optimize] Use /spark in-game to profile performance');
 }
 
 function optimizeServerConfigs() {
@@ -364,35 +343,21 @@ function optimizeServerConfigs() {
     const propsFile = SERVER_DIR + '/server.properties';
     if (fs.existsSync(propsFile)) {
         let props = fs.readFileSync(propsFile, 'utf8');
-        // Reduce view distance for performance
         props = props.replace(/view-distance=\d+/, 'view-distance=6');
         props = props.replace(/simulation-distance=\d+/, 'simulation-distance=4');
-        // Reduce max players if very high
-        if (props.includes('max-players=20')) {
-            props = props.replace(/max-players=\d+/, 'max-players=10');
-        }
         fs.writeFileSync(propsFile, props);
-        log('[Optimize] server.properties tuned');
+        log('[Optimize] server.properties tuned (view-distance=6, simulation=4)');
     }
     
-    // Optimize spigot.yml
+    // Optimize spigot.yml if it exists
     const spigotFile = SERVER_DIR + '/spigot.yml';
     if (fs.existsSync(spigotFile)) {
         let spigot = fs.readFileSync(spigotFile, 'utf8');
-        // Reduce mob spawn ranges
-        spigot = spigot.replace(/mob-spawn-range: \d+/, 'mob-spawn-range: 4');
-        spigot = spigot.replace(/entity-activation-range:/, 'entity-activation-range:\n      animals: 16\n      monsters: 24\n      raiders: 48\n      misc: 8');
-        fs.writeFileSync(spigotFile, spigot);
-        log('[Optimize] spigot.yml tuned');
-    }
-    
-    // Create/update bukkit.yml for chunk loading
-    const bukkitFile = SERVER_DIR + '/bukkit.yml';
-    if (fs.existsSync(bukkitFile)) {
-        let bukkit = fs.readFileSync(bukkitFile, 'utf8');
-        bukkit = bukkit.replace(/chunk-gc:[\s\S]*?period-in-ticks: \d+/, 'chunk-gc:\n  period-in-ticks: 400');
-        fs.writeFileSync(bukkitFile, bukkit);
-        log('[Optimize] bukkit.yml tuned');
+        if (spigot.includes('mob-spawn-range: 8')) {
+            spigot = spigot.replace(/mob-spawn-range: 8/, 'mob-spawn-range: 4');
+            fs.writeFileSync(spigotFile, spigot);
+            log('[Optimize] spigot.yml tuned (mob-spawn-range=4)');
+        }
     }
 }
 
