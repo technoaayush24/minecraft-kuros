@@ -8,15 +8,17 @@
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         :root { --bg: #0c0c0c; --surface: #161616; --surface2: #1e1e1e; --border: #2a2a2a; --text: #e4e4e4; --text2: #888; --accent: #22c55e; --accent2: #16a34a; --red: #ef4444; --yellow: #eab308; --blue: #3b82f6; }
-        body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
-        .layout { display: grid; grid-template-columns: 260px 1fr; min-height: 100vh; }
+        html, body { height: 100%; overflow: hidden; }
+        body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); }
+        
+        .layout { display: grid; grid-template-columns: 260px 1fr; height: 100vh; overflow: hidden; }
         
         .sidebar { background: var(--surface); border-right: 1px solid var(--border); padding: 20px; display: flex; flex-direction: column; gap: 16px; overflow-y: auto; }
-        .logo { display: flex; align-items: center; gap: 10px; }
+        .logo { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
         .logo-icon { width: 36px; height: 36px; background: linear-gradient(135deg, var(--accent), var(--blue)); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 18px; }
         .logo h1 { font-size: 16px; font-weight: 600; }
         
-        .card { background: var(--surface2); border-radius: 10px; padding: 14px; }
+        .card { background: var(--surface2); border-radius: 10px; padding: 14px; flex-shrink: 0; }
         .card-title { font-size: 11px; color: var(--text2); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 10px; }
         
         .status-badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 16px; font-size: 12px; font-weight: 500; }
@@ -32,7 +34,7 @@
         .stat-value { font-weight: 500; }
         
         .player-count { font-size: 28px; font-weight: 600; margin-bottom: 6px; }
-        .player-list { display: flex; flex-direction: column; gap: 6px; max-height: 120px; overflow-y: auto; }
+        .player-list { display: flex; flex-direction: column; gap: 6px; max-height: 100px; overflow-y: auto; }
         .player-item { display: flex; align-items: center; gap: 8px; font-size: 12px; }
         .player-avatar { width: 20px; height: 20px; border-radius: 3px; }
         .no-players { color: var(--text2); font-size: 12px; }
@@ -44,9 +46,9 @@
         .tunnel-btns { margin-top: 10px; display: flex; gap: 6px; }
         .tunnel-btns button { flex: 1; font-size: 11px; padding: 6px; }
         
-        .main { padding: 20px 24px; display: flex; flex-direction: column; gap: 16px; overflow-y: auto; }
+        .main { padding: 20px 24px; display: flex; flex-direction: column; gap: 16px; overflow: hidden; height: 100vh; }
         
-        .topbar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
+        .topbar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; flex-shrink: 0; }
         .server-info h2 { font-size: 18px; font-weight: 600; }
         .server-meta { color: var(--text2); font-size: 12px; margin-top: 2px; }
         
@@ -59,25 +61,27 @@
         .btn-danger { background: rgba(239,68,68,0.1); color: var(--red); border: 1px solid rgba(239,68,68,0.2); }
         .btn:disabled { opacity: 0.5; cursor: not-allowed; }
         
-        .config-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+        .config-bar { display: flex; gap: 12px; flex-shrink: 0; align-items: flex-end; flex-wrap: wrap; }
         .config-item { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 12px; }
         .config-item label { display: block; font-size: 11px; color: var(--text2); margin-bottom: 6px; }
-        .config-item select, .config-item input { width: 100%; padding: 8px 10px; background: var(--surface2); border: 1px solid var(--border); border-radius: 4px; color: var(--text); font-size: 13px; }
-        .config-item select:focus, .config-item input:focus { outline: none; border-color: var(--accent); }
+        .config-item select { width: 160px; padding: 8px 10px; background: var(--surface2); border: 1px solid var(--border); border-radius: 4px; color: var(--text); font-size: 13px; }
+        .config-item select:focus { outline: none; border-color: var(--accent); }
         
-        .console { flex: 1; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; display: flex; flex-direction: column; min-height: 300px; overflow: hidden; }
-        .console-header { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; border-bottom: 1px solid var(--border); background: var(--surface2); }
+        .console { flex: 1; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+        .console-header { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; border-bottom: 1px solid var(--border); background: var(--surface2); flex-shrink: 0; }
         .console-title { font-size: 12px; font-weight: 500; }
-        .console-output { flex: 1; padding: 12px; font-family: 'JetBrains Mono', monospace; font-size: 11px; line-height: 1.5; overflow-y: auto; background: #0a0a0a; color: #888; white-space: pre-wrap; word-break: break-all; }
-        .quick-cmds { display: flex; gap: 6px; flex-wrap: wrap; padding: 10px 14px; border-top: 1px solid var(--border); background: var(--surface2); }
+        .console-output { flex: 1; padding: 12px; font-family: 'JetBrains Mono', monospace; font-size: 11px; line-height: 1.5; overflow-y: auto; background: #0a0a0a; color: #888; white-space: pre-wrap; word-break: break-all; min-height: 0; }
+        .quick-cmds { display: flex; gap: 6px; flex-wrap: wrap; padding: 10px 14px; border-top: 1px solid var(--border); background: var(--surface2); flex-shrink: 0; }
         .quick-cmd { padding: 5px 10px; background: var(--surface); border: 1px solid var(--border); border-radius: 4px; color: var(--text2); font-size: 11px; cursor: pointer; font-family: 'JetBrains Mono', monospace; }
         .quick-cmd:hover { border-color: var(--accent); color: var(--text); }
-        .console-input { display: flex; border-top: 1px solid var(--border); }
+        .console-input { display: flex; border-top: 1px solid var(--border); flex-shrink: 0; }
         .console-input input { flex: 1; padding: 12px 14px; background: var(--surface2); border: none; color: var(--text); font-family: 'JetBrains Mono', monospace; font-size: 12px; }
         .console-input input:focus { outline: none; }
         .console-input button { padding: 0 16px; background: var(--accent); color: #000; border: none; font-weight: 500; font-size: 12px; cursor: pointer; }
         
-        @media (max-width: 900px) { .layout { grid-template-columns: 1fr; } .sidebar { display: none; } .config-grid { grid-template-columns: repeat(2, 1fr); } }
+        .java-info { font-size: 10px; color: var(--text2); margin-top: 4px; }
+        
+        @media (max-width: 900px) { .layout { grid-template-columns: 1fr; } .sidebar { display: none; } }
     </style>
 </head>
 <body>
@@ -97,6 +101,7 @@
                 <div class="stat-row"><span class="stat-label">Uptime</span><span class="stat-value" id="uptime">--</span></div>
                 <div class="stat-row"><span class="stat-label">Type</span><span class="stat-value" id="typeDisplay">Vanilla</span></div>
                 <div class="stat-row"><span class="stat-label">Version</span><span class="stat-value" id="versionDisplay">1.21.4</span></div>
+                <div class="stat-row"><span class="stat-label">Java</span><span class="stat-value" id="javaDisplay">21</span></div>
             </div>
             
             <div class="card">
@@ -130,7 +135,7 @@
                 </div>
             </div>
             
-            <div class="config-grid">
+            <div class="config-bar">
                 <div class="config-item">
                     <label>Server Type</label>
                     <select id="serverType" onchange="updateVersions()">
@@ -142,15 +147,10 @@
                 </div>
                 <div class="config-item">
                     <label>Version</label>
-                    <select id="version"></select>
+                    <select id="version" onchange="updateJavaInfo()"></select>
+                    <div class="java-info" id="javaInfo">Requires Java 21</div>
                 </div>
-                <div class="config-item">
-                    <label>Memory (MB)</label>
-                    <input type="number" id="memory" value="400" min="256" max="1024" step="64">
-                </div>
-                <div class="config-item" style="display:flex;align-items:flex-end;">
-                    <button class="btn btn-secondary" onclick="applyConfig()" style="width:100%">Apply Changes</button>
-                </div>
+                <button class="btn btn-secondary" onclick="applyConfig()">Apply & Restart</button>
             </div>
             
             <div class="console">
@@ -166,7 +166,6 @@
                     <button class="quick-cmd" onclick="sendCmd('time set night')">night</button>
                     <button class="quick-cmd" onclick="sendCmd('weather clear')">clear</button>
                     <button class="quick-cmd" onclick="sendCmd('difficulty peaceful')">peaceful</button>
-                    <button class="quick-cmd" onclick="sendCmd('difficulty normal')">normal</button>
                     <button class="quick-cmd" onclick="sendCmd('gamemode creative @a')">creative</button>
                     <button class="quick-cmd" onclick="sendCmd('gamemode survival @a')">survival</button>
                     <button class="quick-cmd" onclick="sendCmd('give @a diamond 64')">diamonds</button>
@@ -185,6 +184,22 @@
         let ws, config = {}, status = 'stopped', startTime, versions = {};
         let currentTunnelAddress = '';
         
+        function getJavaVersion(mcVersion) {
+            const ver = mcVersion.split('.').map(Number);
+            const major = ver[0], minor = ver[1] || 0, patch = ver[2] || 0;
+            if (minor >= 21) return 21;
+            if (minor === 20 && patch >= 5) return 21;
+            if (minor >= 17) return 17;
+            return 8;
+        }
+        
+        function updateJavaInfo() {
+            const ver = $('version').value;
+            const java = getJavaVersion(ver);
+            $('javaInfo').textContent = `Requires Java ${java}`;
+            $('javaDisplay').textContent = java;
+        }
+        
         function connect() {
             const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
             ws = new WebSocket(proto + '//' + location.host + '/ws');
@@ -200,7 +215,7 @@
                     $('serverType').value = config.serverType || 'vanilla';
                     updateVersions();
                     $('version').value = config.version || '1.21.4';
-                    $('memory').value = config.memory || 400;
+                    updateJavaInfo();
                     if (msg.logs) { $('console').textContent = msg.logs.join('\n'); $('console').scrollTop = $('console').scrollHeight; }
                     if (msg.playit) updatePlayit(msg.playit);
                 } else if (msg.type === 'status') {
@@ -230,6 +245,7 @@
             const typeNames = { vanilla: 'Vanilla', paper: 'Paper', neoforge: 'NeoForge', fabric: 'Fabric' };
             $('typeDisplay').textContent = typeNames[config.serverType] || 'Vanilla';
             $('versionDisplay').textContent = config.version || '1.21.4';
+            $('javaDisplay').textContent = getJavaVersion(config.version || '1.21.4');
             $('serverTitle').textContent = $('typeDisplay').textContent + ' Server';
             $('serverMeta').textContent = `Version ${config.version || '1.21.4'} • Port 25565`;
             
@@ -250,7 +266,7 @@
                 $('tunnelAddress').textContent = data.address;
                 $('tunnelAddress').style.display = 'block';
             } else if (data.status === 'claim' && data.url) {
-                $('tunnelStatus').innerHTML = 'Click to claim: <a href="' + data.url + '" target="_blank" style="color:var(--accent);text-decoration:underline">Open playit.gg</a>';
+                $('tunnelStatus').innerHTML = '<a href="' + data.url + '" target="_blank" style="color:var(--accent)">Click to claim tunnel →</a>';
                 $('tunnelAddress').style.display = 'none';
             } else {
                 currentTunnelAddress = '';
@@ -267,6 +283,7 @@
             const list = versions[type] || ['1.21.4'];
             ver.innerHTML = list.map(v => `<option value="${v}">${v}</option>`).join('');
             if (list.includes(current)) ver.value = current;
+            updateJavaInfo();
         }
         
         function appendLog(text) {

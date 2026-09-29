@@ -13,6 +13,8 @@ app.use(express.static('public'));
 
 const DATA_DIR = '/tmp/mcserver';
 const JRE_DIR = '/tmp/jre';
+const JRE8_DIR = '/tmp/jre8';
+const JRE17_DIR = '/tmp/jre17';
 const CONFIG_FILE = DATA_DIR + '/config.json';
 const PLAYIT_DIR = '/tmp/playit';
 
@@ -22,51 +24,37 @@ let logs = [];
 let status = 'stopped';
 let players = [];
 let playitAddress = null;
-let config = { serverType: 'vanilla', version: '1.21.4', memory: 400, port: 25565 };
+let config = { serverType: 'vanilla', version: '1.21.4', port: 25565 };
 
-// Fetch latest versions dynamically
-async function fetchVanillaVersions() {
-    try {
-        const data = JSON.parse(execSync('wget -qO- "https://launchermeta.mojang.com/mc/game/version_manifest.json"').toString());
-        const versions = {};
-        for (const v of data.versions) {
-            if (v.type === 'release') {
-                versions[v.id] = v.url;
-            }
-        }
-        return versions;
-    } catch (e) {
-        return null;
-    }
+// Java version requirements
+function getJavaVersion(mcVersion) {
+    const ver = mcVersion.split('.').map(Number);
+    const major = ver[0], minor = ver[1] || 0;
+    
+    // 1.20.5+ needs Java 21
+    if (major >= 1 && minor >= 21) return 21;
+    if (major >= 1 && minor === 20 && (ver[2] || 0) >= 5) return 21;
+    
+    // 1.17-1.20.4 needs Java 17
+    if (major >= 1 && minor >= 17) return 17;
+    
+    // 1.16 and below needs Java 8
+    return 8;
 }
 
-async function fetchPaperVersions() {
-    try {
-        const data = JSON.parse(execSync('wget -qO- "https://api.papermc.io/v2/projects/paper"').toString());
-        return data.versions || [];
-    } catch (e) {
-        return [];
-    }
+function getJavaDir(mcVersion) {
+    const jv = getJavaVersion(mcVersion);
+    if (jv === 8) return JRE8_DIR;
+    if (jv === 17) return JRE17_DIR;
+    return JRE_DIR; // Java 21
 }
 
-async function fetchNeoForgeVersions() {
-    try {
-        // NeoForge API
-        const data = JSON.parse(execSync('wget -qO- "https://maven.neoforged.net/api/maven/versions/releases/net/neoforged/neoforge"').toString());
-        return data.versions || [];
-    } catch (e) {
-        return [];
-    }
-}
-
-// Static fallback versions (will be replaced by dynamic fetch)
 const ALL_VERSIONS = {
     vanilla: [
         '1.21.4', '1.21.3', '1.21.2', '1.21.1', '1.21',
         '1.20.6', '1.20.5', '1.20.4', '1.20.2', '1.20.1', '1.20',
         '1.19.4', '1.19.3', '1.19.2', '1.19.1', '1.19',
-        '1.18.2', '1.18.1', '1.18',
-        '1.17.1', '1.17',
+        '1.18.2', '1.18.1', '1.18', '1.17.1', '1.17',
         '1.16.5', '1.16.4', '1.16.3', '1.16.2', '1.16.1', '1.16',
         '1.15.2', '1.14.4', '1.12.2', '1.8.9'
     ],
@@ -74,39 +62,27 @@ const ALL_VERSIONS = {
         '1.21.4', '1.21.3', '1.21.2', '1.21.1', '1.21',
         '1.20.6', '1.20.5', '1.20.4', '1.20.2', '1.20.1', '1.20',
         '1.19.4', '1.19.3', '1.19.2', '1.19.1', '1.19',
-        '1.18.2', '1.18.1', '1.18',
-        '1.17.1', '1.17',
+        '1.18.2', '1.18.1', '1.18', '1.17.1', '1.17',
         '1.16.5', '1.16.4', '1.16.3', '1.16.2', '1.16.1', '1.16'
     ],
-    neoforge: [
-        '1.21.5', '1.21.4', '1.21.1', '1.20.1'
-    ],
-    fabric: [
-        '1.21.4', '1.21.3', '1.21.1', '1.21',
-        '1.20.6', '1.20.4', '1.20.1',
-        '1.19.4', '1.18.2'
-    ]
+    neoforge: ['1.21.4', '1.21.3', '1.21.1', '1.20.4', '1.20.1'],
+    fabric: ['1.21.4', '1.21.3', '1.21.1', '1.21', '1.20.6', '1.20.4', '1.20.1', '1.19.4', '1.18.2']
 };
 
 let cachedVersions = { ...ALL_VERSIONS };
 let vanillaManifest = {};
 
-// Load versions on startup
 async function loadVersions() {
     try {
-        // Fetch vanilla manifest
         const manifest = JSON.parse(execSync('wget -qO- "https://launchermeta.mojang.com/mc/game/version_manifest.json"', { timeout: 10000 }).toString());
         cachedVersions.vanilla = manifest.versions.filter(v => v.type === 'release').map(v => v.id).slice(0, 50);
         manifest.versions.forEach(v => { if (v.type === 'release') vanillaManifest[v.id] = v.url; });
         
-        // Fetch Paper versions
         const paper = JSON.parse(execSync('wget -qO- "https://api.papermc.io/v2/projects/paper"', { timeout: 10000 }).toString());
         if (paper.versions) cachedVersions.paper = paper.versions.reverse().slice(0, 40);
         
-        log('Loaded latest versions from APIs');
-    } catch (e) {
-        log('Using cached version list');
-    }
+        log('Loaded latest versions');
+    } catch (e) { log('Using cached versions'); }
 }
 
 function loadConfig() {
@@ -130,18 +106,31 @@ function log(msg) {
     broadcast({ type: 'log', data: line });
 }
 
-async function installJava() {
-    if (fs.existsSync(JRE_DIR + '/bin/java')) return true;
-    log('Downloading Java 21...');
+// Install specific Java version
+async function installJava(version) {
+    const urls = {
+        8: 'https://github.com/adoptium/temurin8-binaries/releases/download/jdk8u422-b05/OpenJDK8U-jre_x64_alpine-linux_hotspot_8u422b05.tar.gz',
+        17: 'https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.12%2B7/OpenJDK17U-jre_x64_alpine-linux_hotspot_17.0.12_7.tar.gz',
+        21: 'https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.4%2B7/OpenJDK21U-jre_x64_alpine-linux_hotspot_21.0.4_7.tar.gz'
+    };
+    
+    const dirs = { 8: JRE8_DIR, 17: JRE17_DIR, 21: JRE_DIR };
+    const extractDirs = { 8: 'jdk8u422-b05-jre', 17: 'jdk-17.0.12+7-jre', 21: 'jdk-21.0.4+7-jre' };
+    
+    const dir = dirs[version];
+    if (fs.existsSync(dir + '/bin/java')) return true;
+    
+    log(`Installing Java ${version}...`);
     status = 'installing';
     broadcast({ type: 'status', status });
+    
     try {
-        execSync(`wget -q -O /tmp/jre.tar.gz "https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.4%2B7/OpenJDK21U-jre_x64_alpine-linux_hotspot_21.0.4_7.tar.gz"`, { timeout: 300000 });
-        execSync(`mkdir -p ${JRE_DIR} && tar -xzf /tmp/jre.tar.gz -C /tmp && mv /tmp/jdk-21.0.4+7-jre/* ${JRE_DIR}/`);
-        execSync('rm -f /tmp/jre.tar.gz');
-        log('Java installed');
+        execSync(`wget -q -O /tmp/jre${version}.tar.gz "${urls[version]}"`, { timeout: 300000 });
+        execSync(`mkdir -p ${dir} && tar -xzf /tmp/jre${version}.tar.gz -C /tmp && mv /tmp/${extractDirs[version]}/* ${dir}/`);
+        execSync(`rm -f /tmp/jre${version}.tar.gz`);
+        log(`Java ${version} installed`);
         return true;
-    } catch (e) { log('Java install failed: ' + e.message); status = 'error'; return false; }
+    } catch (e) { log(`Java ${version} install failed: ` + e.message); status = 'error'; return false; }
 }
 
 async function installPlayit() {
@@ -151,7 +140,6 @@ async function installPlayit() {
         fs.mkdirSync(PLAYIT_DIR, { recursive: true });
         execSync(`wget -q -O ${PLAYIT_DIR}/playit.tar.gz "https://github.com/playit-cloud/playit-agent/releases/latest/download/playit-linux-amd64.tar.gz"`, { timeout: 120000 });
         execSync(`cd ${PLAYIT_DIR} && tar -xzf playit.tar.gz && chmod +x playit*`);
-        log('playit.gg installed');
         return true;
     } catch (e) { log('playit.gg failed: ' + e.message); return false; }
 }
@@ -159,19 +147,18 @@ async function installPlayit() {
 async function startPlayit() {
     if (playitProcess) return;
     if (!await installPlayit()) return;
-    log('Starting playit.gg tunnel...');
+    log('Starting tunnel...');
     
     playitProcess = spawn(PLAYIT_DIR + '/playit', ['--stdout'], { cwd: PLAYIT_DIR });
     
     playitProcess.stdout.on('data', (data) => {
         const text = data.toString();
-        log('[playit] ' + text.trim());
         const claimMatch = text.match(/https:\/\/playit\.gg\/claim\/[a-zA-Z0-9-]+/);
-        if (claimMatch) { playitAddress = claimMatch[0]; broadcast({ type: 'playit', status: 'claim', url: playitAddress }); }
+        if (claimMatch) { playitAddress = claimMatch[0]; broadcast({ type: 'playit', status: 'claim', url: playitAddress }); log('Claim tunnel: ' + playitAddress); }
         const tunnelMatch = text.match(/(\w+\.ply\.gg:\d+)/);
-        if (tunnelMatch) { playitAddress = tunnelMatch[1]; broadcast({ type: 'playit', status: 'connected', address: playitAddress }); log('Tunnel: ' + playitAddress); }
+        if (tunnelMatch) { playitAddress = tunnelMatch[1]; broadcast({ type: 'playit', status: 'connected', address: playitAddress }); log('Tunnel ready: ' + playitAddress); }
     });
-    playitProcess.stderr.on('data', (data) => log('[playit] ' + data.toString().trim()));
+    playitProcess.stderr.on('data', (data) => {});
     playitProcess.on('close', () => { playitProcess = null; playitAddress = null; broadcast({ type: 'playit', status: 'stopped' }); });
 }
 
@@ -183,7 +170,6 @@ async function getVanillaJarUrl(version) {
             const versionData = JSON.parse(execSync(`wget -qO- "${vanillaManifest[version]}"`, { timeout: 10000 }).toString());
             return versionData.downloads?.server?.url;
         }
-        // Fallback: fetch manifest
         const manifest = JSON.parse(execSync('wget -qO- "https://launchermeta.mojang.com/mc/game/version_manifest.json"', { timeout: 10000 }).toString());
         const versionInfo = manifest.versions.find(v => v.id === version);
         if (versionInfo) {
@@ -200,6 +186,8 @@ async function downloadServer() {
     status = 'downloading';
     broadcast({ type: 'status', status });
     
+    const javaDir = getJavaDir(config.version);
+    
     try {
         fs.mkdirSync(DATA_DIR, { recursive: true });
         if (fs.existsSync(jarPath)) fs.unlinkSync(jarPath);
@@ -210,7 +198,6 @@ async function downloadServer() {
             execSync(`wget -q -O "${jarPath}" "${url}"`, { timeout: 300000 });
             
         } else if (config.serverType === 'paper') {
-            // Get latest build for version
             const builds = JSON.parse(execSync(`wget -qO- "https://api.papermc.io/v2/projects/paper/versions/${config.version}"`, { timeout: 10000 }).toString());
             const latestBuild = builds.builds[builds.builds.length - 1];
             const buildInfo = JSON.parse(execSync(`wget -qO- "https://api.papermc.io/v2/projects/paper/versions/${config.version}/builds/${latestBuild}"`, { timeout: 10000 }).toString());
@@ -218,34 +205,23 @@ async function downloadServer() {
             execSync(`wget -q -O "${jarPath}" "https://api.papermc.io/v2/projects/paper/versions/${config.version}/builds/${latestBuild}/downloads/${fileName}"`, { timeout: 300000 });
             
         } else if (config.serverType === 'neoforge') {
-            log('Setting up NeoForge (this takes a while)...');
-            // NeoForge installer
+            log('Setting up NeoForge...');
             const nfVersions = JSON.parse(execSync('wget -qO- "https://maven.neoforged.net/api/maven/versions/releases/net/neoforged/neoforge"', { timeout: 10000 }).toString());
-            // Find version matching MC version
             const mcVer = config.version.replace('1.', '');
             const nfVersion = nfVersions.versions.reverse().find(v => v.startsWith(mcVer));
             if (!nfVersion) throw new Error('NeoForge not available for ' + config.version);
             
-            const installerUrl = `https://maven.neoforged.net/releases/net/neoforged/neoforge/${nfVersion}/neoforge-${nfVersion}-installer.jar`;
-            execSync(`wget -q -O ${DATA_DIR}/neoforge-installer.jar "${installerUrl}"`, { timeout: 180000 });
-            execSync(`cd ${DATA_DIR} && ${JRE_DIR}/bin/java -jar neoforge-installer.jar --installServer`, { timeout: 600000 });
-            
-            // NeoForge creates run.sh or uses libraries
-            if (fs.existsSync(DATA_DIR + '/run.sh')) {
-                fs.writeFileSync(DATA_DIR + '/start.sh', `#!/bin/sh\ncd ${DATA_DIR}\n./run.sh nogui`);
-            }
+            execSync(`wget -q -O ${DATA_DIR}/neoforge-installer.jar "https://maven.neoforged.net/releases/net/neoforged/neoforge/${nfVersion}/neoforge-${nfVersion}-installer.jar"`, { timeout: 180000 });
+            execSync(`cd ${DATA_DIR} && ${javaDir}/bin/java -jar neoforge-installer.jar --installServer`, { timeout: 600000 });
             
         } else if (config.serverType === 'fabric') {
             const installerData = JSON.parse(execSync('wget -qO- "https://meta.fabricmc.net/v2/versions/installer"', { timeout: 10000 }).toString());
-            const installerUrl = installerData[0]?.url;
-            execSync(`wget -q -O ${DATA_DIR}/fabric-installer.jar "${installerUrl}"`, { timeout: 120000 });
-            execSync(`cd ${DATA_DIR} && ${JRE_DIR}/bin/java -jar fabric-installer.jar server -mcversion ${config.version} -downloadMinecraft`, { timeout: 300000 });
-            if (fs.existsSync(DATA_DIR + '/fabric-server-launch.jar')) {
-                fs.renameSync(DATA_DIR + '/fabric-server-launch.jar', jarPath);
-            }
+            execSync(`wget -q -O ${DATA_DIR}/fabric-installer.jar "${installerData[0]?.url}"`, { timeout: 120000 });
+            execSync(`cd ${DATA_DIR} && ${javaDir}/bin/java -jar fabric-installer.jar server -mcversion ${config.version} -downloadMinecraft`, { timeout: 300000 });
+            if (fs.existsSync(DATA_DIR + '/fabric-server-launch.jar')) fs.renameSync(DATA_DIR + '/fabric-server-launch.jar', jarPath);
         }
         
-        log('Server downloaded');
+        log('Download complete');
         return true;
     } catch (e) { log('Download failed: ' + e.message); status = 'error'; return false; }
 }
@@ -256,8 +232,8 @@ function createConfigs() {
 server-port=${config.port}
 online-mode=false
 max-players=20
-view-distance=8
-simulation-distance=6
+view-distance=6
+simulation-distance=4
 spawn-protection=0
 difficulty=normal
 gamemode=survival
@@ -275,11 +251,16 @@ async function startServer() {
     broadcast({ type: 'status', status });
     broadcast({ type: 'logs', data: '' });
     
-    if (!await installJava()) return { error: 'Java failed' };
+    // Install correct Java version
+    const javaVersion = getJavaVersion(config.version);
+    const javaDir = getJavaDir(config.version);
+    log(`MC ${config.version} requires Java ${javaVersion}`);
+    
+    if (!await installJava(javaVersion)) return { error: 'Java failed' };
     
     const jarPath = DATA_DIR + '/server.jar';
-    const hasJar = fs.existsSync(jarPath) || fs.existsSync(DATA_DIR + '/run.sh');
-    if (!hasJar) {
+    const hasServer = fs.existsSync(jarPath) || fs.existsSync(DATA_DIR + '/run.sh');
+    if (!hasServer) {
         if (!await downloadServer()) return { error: 'Download failed' };
     }
     
@@ -288,17 +269,19 @@ async function startServer() {
     
     log(`Starting ${config.serverType} ${config.version}...`);
     
-    // Different start methods
+    // Use max memory (leave some for system)
+    const maxMem = 450; // Safe for 512MB container
+    
     let cmd, args;
     if (config.serverType === 'neoforge' && fs.existsSync(DATA_DIR + '/run.sh')) {
         cmd = '/bin/sh';
         args = ['run.sh', 'nogui'];
     } else {
-        cmd = JRE_DIR + '/bin/java';
-        args = [`-Xms${Math.floor(config.memory * 0.5)}M`, `-Xmx${config.memory}M`, '-XX:+UseG1GC', '-jar', 'server.jar', 'nogui'];
+        cmd = javaDir + '/bin/java';
+        args = [`-Xms128M`, `-Xmx${maxMem}M`, '-XX:+UseG1GC', '-XX:+ParallelRefProcEnabled', '-XX:MaxGCPauseMillis=200', '-jar', 'server.jar', 'nogui'];
     }
     
-    mcProcess = spawn(cmd, args, { cwd: DATA_DIR, env: { ...process.env, JAVA_HOME: JRE_DIR } });
+    mcProcess = spawn(cmd, args, { cwd: DATA_DIR, env: { ...process.env, JAVA_HOME: javaDir } });
     
     mcProcess.stdout.on('data', handleOutput);
     mcProcess.stderr.on('data', handleOutput);
@@ -359,7 +342,6 @@ async function changeServer(newType, newVersion) {
     config.version = newVersion;
     saveConfig();
     
-    // Clean old files
     try { execSync(`rm -rf ${DATA_DIR}/server.jar ${DATA_DIR}/libraries ${DATA_DIR}/mods ${DATA_DIR}/*.json ${DATA_DIR}/run.sh ${DATA_DIR}/*installer* ${DATA_DIR}/fabric*`); } catch(e){}
     
     log(`Changed to ${newType} ${newVersion}`);
@@ -377,7 +359,7 @@ function sendCommand(cmd) {
 wss.on('connection', (ws) => {
     ws.send(JSON.stringify({ 
         type: 'init', status, players, config, logs: logs.slice(-100),
-        playit: playitAddress ? { status: 'connected', address: playitAddress } : { status: 'stopped' },
+        playit: playitAddress ? (playitAddress.startsWith('http') ? { status: 'claim', url: playitAddress } : { status: 'connected', address: playitAddress }) : { status: 'stopped' },
         versions: cachedVersions
     }));
     ws.on('message', (msg) => { try { const { type, data } = JSON.parse(msg); if (type === 'command') sendCommand(data); } catch (e) {} });
