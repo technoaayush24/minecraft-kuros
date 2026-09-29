@@ -533,7 +533,13 @@
         }, 1000);
         
         // DOM is ready since script is at end of body
-        updateVersions();
+        try {
+            console.log('Calling updateVersions, versions:', Object.keys(versions));
+            updateVersions();
+            console.log('Version options:', document.getElementById('version').options.length);
+        } catch(e) {
+            console.error('updateVersions error:', e);
+        }
         connect();
     </script>
 
