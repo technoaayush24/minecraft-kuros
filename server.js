@@ -290,10 +290,14 @@ async function downloadServer() {
             if (!url) throw new Error('Version not found');
             execSync(`wget -q -O "${jarPath}" "${url}"`, { timeout: 300000 });
         } else if (config.serverType === 'paper') {
-            const builds = JSON.parse(execSync(`wget -qO- "https://api.papermc.io/v2/projects/paper/versions/${config.version}"`, { timeout: 15000 }).toString());
-            const build = builds.builds[builds.builds.length - 1];
-            const info = JSON.parse(execSync(`wget -qO- "https://api.papermc.io/v2/projects/paper/versions/${config.version}/builds/${build}"`, { timeout: 15000 }).toString());
-            execSync(`wget -q -O "${jarPath}" "https://api.papermc.io/v2/projects/paper/versions/${config.version}/builds/${build}/downloads/${info.downloads.application.name}"`, { timeout: 300000 });
+            // PaperMC API v2 is sunset - scrape from downloads page
+            log('Fetching Paper download URL from papermc.io...');
+            const html = execSync(`wget -qO- "https://papermc.io/downloads/paper"`, { timeout: 30000 }).toString();
+            const urlMatch = html.match(/https:\/\/fill-data\.papermc\.io\/v1\/objects\/[a-f0-9]+\/paper-[0-9.]+-\d+\.jar/);
+            if (!urlMatch) throw new Error('Could not find Paper download URL');
+            const paperUrl = urlMatch[0];
+            log(`Found Paper URL: ${paperUrl}`);
+            execSync(`wget -q -O "${jarPath}" "${paperUrl}"`, { timeout: 300000 });
         } else if (config.serverType === 'fabric') {
             const installer = JSON.parse(execSync('wget -qO- "https://meta.fabricmc.net/v2/versions/installer"', { timeout: 15000 }).toString());
             execSync(`wget -q -O ${SERVER_DIR}/fabric-installer.jar "${installer[0]?.url}"`, { timeout: 120000 });
