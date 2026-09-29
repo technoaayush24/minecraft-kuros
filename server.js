@@ -17,22 +17,18 @@ const SERVER_DIR = DATA_DIR + '/server';
 const JAVA_DIR = DATA_DIR + '/java';
 const BACKUPS_DIR = DATA_DIR + '/backups';
 const CONFIG_FILE = DATA_DIR + '/config.json';
-const PLAYIT_DIR = DATA_DIR + '/playit';
-const SECRET_FILE = PLAYIT_DIR + '/secret.txt';
 
 let mcProcess = null;
-let playitProcess = null;
-let claimProcess = null;
+let tunnelProcess = null;
 let logs = [];
 let status = 'stopped';
 let players = [];
 let tunnelAddress = null;
 let tunnelStatus = 'stopped';
-let claimUrl = null;
 let config = { serverType: 'vanilla', version: '1.21.4', port: 25565, autoStart: true };
 
 function ensureDirs() {
-    [DATA_DIR, SERVER_DIR, JAVA_DIR, BACKUPS_DIR, PLAYIT_DIR, SERVER_DIR + '/plugins', SERVER_DIR + '/mods'].forEach(dir => {
+    [DATA_DIR, SERVER_DIR, JAVA_DIR, BACKUPS_DIR, SERVER_DIR + '/plugins', SERVER_DIR + '/mods'].forEach(dir => {
         if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
     });
 }
@@ -80,152 +76,86 @@ function log(msg) {
     broadcast({ type: 'log', data: line });
 }
 
-// ==================== PLAYIT TUNNEL ====================
-async function installPlayit() {
-    const playitBin = PLAYIT_DIR + '/playit';
-    const playitCli = PLAYIT_DIR + '/playit-cli';
-    if (fs.existsSync(playitBin) && fs.existsSync(playitCli)) return true;
-    log('Installing playit.gg...');
+// ==================== BORE TUNNEL (Simple, no signup!) ====================
+async function installBore() {
+    const boreBin = DATA_DIR + '/bore';
+    if (fs.existsSync(boreBin)) return true;
+    log('Installing bore tunnel...');
     try {
         ensureDirs();
-        execSync(`wget -q -O ${playitBin} "https://builds.playit.gg/1.0.10/playit-linux-amd64"`, { timeout: 120000 });
-        execSync(`wget -q -O ${playitCli} "https://builds.playit.gg/1.0.10/playit-cli-linux-amd64"`, { timeout: 120000 });
-        execSync(`chmod +x ${playitBin} ${playitCli}`);
-        log('playit.gg installed');
+        execSync(`wget -q -O /tmp/bore.tar.gz "https://github.com/ekzhang/bore/releases/download/v0.5.2/bore-v0.5.2-x86_64-unknown-linux-musl.tar.gz"`, { timeout: 60000 });
+        execSync(`tar -xzf /tmp/bore.tar.gz -C ${DATA_DIR} && rm /tmp/bore.tar.gz`);
+        execSync(`chmod +x ${boreBin}`);
+        log('bore installed');
         return true;
     } catch (e) { 
-        log('playit install failed: ' + e.message); 
+        log('bore install failed: ' + e.message); 
         return false; 
     }
 }
 
 async function startTunnel() {
-    if (playitProcess || claimProcess) {
+    if (tunnelProcess) {
         log('Tunnel already running');
         return;
     }
     
-    if (!await installPlayit()) return;
+    if (!await installBore()) return;
     
-    const playitBin = PLAYIT_DIR + '/playit';
-    const playitCli = PLAYIT_DIR + '/playit-cli';
+    log('Starting tunnel...');
+    tunnelStatus = 'starting';
+    broadcast({ type: 'tunnel', status: tunnelStatus });
     
-    // Check if we have a secret (already claimed)
-    if (fs.existsSync(SECRET_FILE)) {
-        const secret = fs.readFileSync(SECRET_FILE, 'utf8').trim();
-        if (secret) {
-            log('Starting tunnel...');
-            tunnelStatus = 'starting';
-            broadcast({ type: 'tunnel', status: tunnelStatus });
-            
-            // Use --secret inline instead of file to avoid IPC issues
-            playitProcess = spawn(playitBin, [
-                '--secret', secret,
-                '--socket-path', PLAYIT_DIR + '/playit.sock',
-                '--platform-docker'
-            ], { 
-                cwd: PLAYIT_DIR,
-                env: { ...process.env, HOME: PLAYIT_DIR }
-            });
-            
-            playitProcess.stdout.on('data', handlePlayitOutput);
-            playitProcess.stderr.on('data', handlePlayitOutput);
-            playitProcess.on('close', (code) => {
-                log(`Tunnel exited (${code})`);
-                playitProcess = null;
-                if (tunnelStatus !== 'connected') {
-                    tunnelStatus = 'stopped';
-                    broadcast({ type: 'tunnel', status: tunnelStatus });
-                }
-            });
-            return;
+    const boreBin = DATA_DIR + '/bore';
+    
+    tunnelProcess = spawn(boreBin, ['local', '25565', '--to', 'bore.pub'], {
+        cwd: DATA_DIR
+    });
+    
+    tunnelProcess.stdout.on('data', (data) => {
+        const text = data.toString();
+        console.log('[bore]', text.trim());
+        
+        // Look for the address
+        const match = text.match(/listening at ([^\s]+)/i);
+        if (match) {
+            tunnelAddress = match[1];
+            tunnelStatus = 'connected';
+            log('✅ CONNECT: ' + tunnelAddress);
+            broadcast({ type: 'tunnel', status: 'connected', address: tunnelAddress });
         }
-    }
+    });
     
-    // Need to claim first
-    log('Generating claim link...');
-    tunnelStatus = 'claiming';
+    tunnelProcess.stderr.on('data', (data) => {
+        const text = data.toString();
+        console.log('[bore]', text.trim());
+        
+        const match = text.match(/listening at ([^\s]+)/i);
+        if (match) {
+            tunnelAddress = match[1];
+            tunnelStatus = 'connected';
+            log('✅ CONNECT: ' + tunnelAddress);
+            broadcast({ type: 'tunnel', status: 'connected', address: tunnelAddress });
+        }
+        
+        if (text.includes('error')) {
+            log('[tunnel] ' + text.trim());
+        }
+    });
     
-    try {
-        const claimCode = execSync(`${playitCli} claim generate`, { cwd: PLAYIT_DIR }).toString().trim();
-        claimUrl = `https://playit.gg/claim/${claimCode}`;
-        log('🔗 CLAIM YOUR TUNNEL: ' + claimUrl);
-        
-        tunnelStatus = 'claim';
-        broadcast({ type: 'tunnel', status: 'claim', url: claimUrl });
-        
-        // Start exchange process (waits for claim)
-        log('Waiting for claim (5 min timeout)...');
-        claimProcess = spawn(playitCli, ['claim', 'exchange', '--wait', '300', claimCode], {
-            cwd: PLAYIT_DIR,
-            env: { ...process.env, HOME: PLAYIT_DIR }
-        });
-        
-        let secretData = '';
-        claimProcess.stdout.on('data', (data) => {
-            secretData += data.toString();
-            console.log('[claim stdout]', data.toString().trim());
-        });
-        
-        claimProcess.stderr.on('data', (data) => {
-            console.log('[claim stderr]', data.toString().trim());
-        });
-        
-        claimProcess.on('close', (code) => {
-            claimProcess = null;
-            const secret = secretData.trim();
-            if (code === 0 && secret && secret.length > 10) {
-                // Save just the raw secret
-                fs.writeFileSync(SECRET_FILE, secret);
-                log('✅ Tunnel claimed! Starting...');
-                claimUrl = null;
-                // Now start the actual tunnel
-                setTimeout(() => startTunnel(), 1000);
-            } else {
-                log('Claim failed or expired (code: ' + code + ')');
-                tunnelStatus = 'stopped';
-                claimUrl = null;
-                broadcast({ type: 'tunnel', status: 'stopped' });
-            }
-        });
-    } catch (e) {
-        log('Claim error: ' + e.message);
+    tunnelProcess.on('close', (code) => {
+        log(`Tunnel exited (${code})`);
+        tunnelProcess = null;
         tunnelStatus = 'stopped';
+        tunnelAddress = null;
         broadcast({ type: 'tunnel', status: 'stopped' });
-    }
-}
-
-function handlePlayitOutput(data) {
-    const text = data.toString();
-    console.log('[playit]', text.trim());
-    
-    // Look for tunnel address
-    const addrMatch = text.match(/([a-z0-9-]+\.(?:at\.playit\.gg|ply\.gg|joinmc\.link)(?::\d+)?)/i);
-    if (addrMatch) {
-        tunnelAddress = addrMatch[1];
-        tunnelStatus = 'connected';
-        log('✅ CONNECTED: ' + tunnelAddress);
-        broadcast({ type: 'tunnel', status: 'connected', address: tunnelAddress });
-    }
-    
-    // Log errors
-    if (text.toLowerCase().includes('error')) {
-        log('[tunnel] ' + text.trim().substring(0, 200));
-    }
-    
-    // Check for successful connection messages
-    if (text.includes('tunnel running') || text.includes('Tunnel is running')) {
-        tunnelStatus = 'connected';
-        broadcast({ type: 'tunnel', status: 'connected', address: tunnelAddress });
-    }
+    });
 }
 
 function stopTunnel() {
-    if (playitProcess) { playitProcess.kill(); playitProcess = null; }
-    if (claimProcess) { claimProcess.kill(); claimProcess = null; }
+    if (tunnelProcess) { tunnelProcess.kill(); tunnelProcess = null; }
     tunnelStatus = 'stopped'; 
     tunnelAddress = null;
-    claimUrl = null;
     broadcast({ type: 'tunnel', status: 'stopped' });
 }
 
@@ -328,7 +258,8 @@ async function startServer() {
         broadcast({ type: 'status', status });
         broadcast({ type: 'players', players });
     });
-    setTimeout(() => startTunnel(), 5000);
+    // Start tunnel automatically
+    setTimeout(() => startTunnel(), 3000);
     return { success: true };
 }
 
@@ -356,6 +287,7 @@ function stopServer() {
     broadcast({ type: 'status', status });
     mcProcess.stdin.write('stop\n');
     setTimeout(() => mcProcess && mcProcess.kill(), 15000);
+    stopTunnel();
     return { success: true };
 }
 
@@ -474,12 +406,12 @@ function removePlugin(name, type = 'plugin') {
 wss.on('connection', (ws) => {
     ws.send(JSON.stringify({ 
         type: 'init', status, players, config, logs: logs.slice(-100), versions: cachedVersions,
-        tunnel: { status: tunnelStatus, address: tunnelAddress, url: claimUrl }
+        tunnel: { status: tunnelStatus, address: tunnelAddress }
     }));
     ws.on('message', (msg) => { try { const { type, data } = JSON.parse(msg); if (type === 'command') sendCommand(data); } catch (e) {} });
 });
 
-app.get('/api/status', (req, res) => res.json({ status, players, config, tunnel: { status: tunnelStatus, address: tunnelAddress, url: claimUrl } }));
+app.get('/api/status', (req, res) => res.json({ status, players, config, tunnel: { status: tunnelStatus, address: tunnelAddress } }));
 app.get('/api/versions', (req, res) => res.json(cachedVersions));
 app.post('/api/start', async (req, res) => res.json(await startServer()));
 app.post('/api/stop', (req, res) => res.json(stopServer()));

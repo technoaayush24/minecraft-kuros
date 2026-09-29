@@ -301,13 +301,9 @@
             if (t.status === 'connected' && t.address) {
                 $('tunnelContent').innerHTML = `<div class="tunnel-address" onclick="navigator.clipboard.writeText('${t.address}');this.textContent='Copied!';setTimeout(()=>this.textContent='${t.address}',1000)">${t.address}</div><div style="font-size:9px;color:var(--text2);margin-top:4px;text-align:center">Click to copy</div>`;
                 btn.style.display = 'none';
-            } else if (t.status === 'claim' && t.url) {
-                $('tunnelContent').innerHTML = `<a href="${t.url}" target="_blank" class="claim-link">🔗 Click to Claim Tunnel</a>`;
-                btn.style.display = 'none';
             } else if (t.status === 'starting') {
-                $('tunnelContent').innerHTML = `<span style="font-size:11px;color:var(--yellow)">⏳ Starting tunnel...</span>`;
+                $('tunnelContent').innerHTML = `<span style="font-size:11px;color:var(--yellow)">⏳ Starting...</span>`;
                 btn.disabled = true;
-                btn.textContent = 'Starting...';
             } else {
                 $('tunnelContent').innerHTML = `<span style="font-size:11px;color:var(--text2)">Not connected</span>`;
                 btn.style.display = 'block';
