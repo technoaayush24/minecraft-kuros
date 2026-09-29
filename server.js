@@ -1,4 +1,4 @@
-const { MongoClient } = require('mongodb');
+const { MongoClient } = require("mongodb");
 const express = require('express');
 const http = require('http');
 const WebSocket = require('ws');
@@ -28,13 +28,9 @@ let tunnelAddress = null;
 let tunnelStatus = 'stopped';
 let config = { serverType: 'vanilla', version: '1.21.4', port: 25565, autoStart: false };
 
-// MongoDB for state persistence
-let mongoClient = null;
-let db = null;
+// MongoDB for state persistence (config only, NOT big files)
+let mongoClient = null, db = null;
 const MONGO_URI = process.env.MONGODB_URI;
-const DB_NAME = 'minecraft_server';
-const STATE_COLLECTION = 'server_state';
-const BACKUPS_COLLECTION = 'backups';
 let autoSaveInterval = null;
 
 function ensureDirs() {
@@ -43,168 +39,49 @@ function ensureDirs() {
     });
 }
 
-// ============ MongoDB State Persistence ============
-
+// === MongoDB Functions (state only) ===
 async function connectMongo() {
-    if (!MONGO_URI) {
-        log('[MongoDB] No MONGODB_URI configured, state persistence disabled');
-        return false;
-    }
+    if (!MONGO_URI) { log('[MongoDB] No URI configured'); return false; }
     try {
         mongoClient = new MongoClient(MONGO_URI);
         await mongoClient.connect();
-        db = mongoClient.db(DB_NAME);
-        log('[MongoDB] Connected successfully');
+        db = mongoClient.db('minecraft_server');
+        log('[MongoDB] Connected');
         return true;
-    } catch (err) {
-        log('[MongoDB] Connection failed: ' + err.message);
-        return false;
-    }
+    } catch (e) { log('[MongoDB] Failed: ' + e.message); return false; }
 }
 
 async function saveState() {
-    if (!db) return false;
+    if (!db) return;
     try {
-        const state = {
-            _id: 'main_state',
-            config,
-            tunnelAddress,
-            lastSave: new Date(),
-            serverType: config.serverType,
-            version: config.version
-        };
-        await db.collection(STATE_COLLECTION).replaceOne(
-            { _id: 'main_state' },
-            state,
-            { upsert: true }
-        );
-        log('[MongoDB] State saved');
-        broadcast({ type: 'log', data: '[State] Saved to cloud' });
-        return true;
-    } catch (err) {
-        log('[MongoDB] Save state failed: ' + err.message);
-        return false;
-    }
+        await db.collection('state').replaceOne({ _id: 'main' }, {
+            _id: 'main', config, lastSave: new Date()
+        }, { upsert: true });
+        log('[State] Saved to MongoDB');
+        broadcast({ type: 'log', data: '[State] Saved' });
+    } catch (e) { log('[MongoDB] Save error: ' + e.message); }
 }
 
 async function loadState() {
     if (!db) return null;
     try {
-        const state = await db.collection(STATE_COLLECTION).findOne({ _id: 'main_state' });
-        if (state) {
-            log('[MongoDB] State loaded from ' + state.lastSave);
-            return state;
-        }
-        return null;
-    } catch (err) {
-        log('[MongoDB] Load state failed: ' + err.message);
-        return null;
-    }
-}
-
-async function saveBackupRecord(backupInfo) {
-    if (!db) return false;
-    try {
-        backupInfo.createdAt = new Date();
-        await db.collection(BACKUPS_COLLECTION).insertOne(backupInfo);
-        log('[MongoDB] Backup record saved: ' + backupInfo.name);
-        return true;
-    } catch (err) {
-        log('[MongoDB] Save backup record failed: ' + err.message);
-        return false;
-    }
-}
-
-async function getBackupRecords() {
-    if (!db) return [];
-    try {
-        const backups = await db.collection(BACKUPS_COLLECTION)
-            .find({})
-            .sort({ createdAt: -1 })
-            .limit(50)
-            .toArray();
-        return backups;
-    } catch (err) {
-        log('[MongoDB] Get backup records failed: ' + err.message);
-        return [];
-    }
+        const s = await db.collection('state').findOne({ _id: 'main' });
+        if (s) log('[MongoDB] State loaded from ' + s.lastSave);
+        return s;
+    } catch (e) { return null; }
 }
 
 function startAutoSave() {
     if (autoSaveInterval) clearInterval(autoSaveInterval);
-    // Auto-save every 10 minutes
     autoSaveInterval = setInterval(async () => {
         if (status === 'running') {
-            log('[AutoSave] Saving state...');
             await saveState();
-            // Also create a world backup
-            await createAutoBackup();
+            await createCloudBackup(true); // auto backup to Pixxo
         }
-    }, 10 * 60 * 1000); // 10 minutes
-    log('[AutoSave] Started (every 10 minutes)');
+    }, 10 * 60 * 1000);
+    log('[AutoSave] Started (10 min: state->MongoDB, world->Pixxo)');
 }
-
-async function createAutoBackup() {
-    if (status !== 'running' || !fs.existsSync(SERVER_DIR + '/world')) return;
-    try {
-        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-        const backupName = `auto_${timestamp}.zip`;
-        const backupPath = path.join(BACKUPS_DIR, backupName);
-        
-        // Use archiver to create backup
-        const archiver = require('archiver');
-        const output = fs.createWriteStream(backupPath);
-        const archive = archiver('zip', { zlib: { level: 5 } });
-        
-        await new Promise((resolve, reject) => {
-            output.on('close', resolve);
-            archive.on('error', reject);
-            archive.pipe(output);
-            archive.directory(SERVER_DIR + '/world', 'world');
-            archive.finalize();
-        });
-        
-        const stats = fs.statSync(backupPath);
-        const backupInfo = {
-            name: backupName,
-            type: 'auto',
-            size: stats.size,
-            path: backupPath,
-            serverType: config.serverType,
-            version: config.version
-        };
-        
-        await saveBackupRecord(backupInfo);
-        log('[AutoBackup] Created: ' + backupName);
-        broadcast({ type: 'log', data: '[AutoBackup] World saved' });
-        
-        // Keep only last 10 auto backups
-        await cleanupOldBackups();
-    } catch (err) {
-        log('[AutoBackup] Failed: ' + err.message);
-    }
-}
-
-async function cleanupOldBackups() {
-    try {
-        const files = fs.readdirSync(BACKUPS_DIR)
-            .filter(f => f.startsWith('auto_') && f.endsWith('.zip'))
-            .map(f => ({ name: f, time: fs.statSync(path.join(BACKUPS_DIR, f)).mtime }))
-            .sort((a, b) => b.time - a.time);
-        
-        // Keep only last 10
-        if (files.length > 10) {
-            for (const file of files.slice(10)) {
-                fs.unlinkSync(path.join(BACKUPS_DIR, file.name));
-                log('[AutoBackup] Cleaned up: ' + file.name);
-            }
-        }
-    } catch (err) {
-        log('[AutoBackup] Cleanup failed: ' + err.message);
-    }
-}
-
-// ============ End MongoDB Functions ============
+// === End MongoDB ===
 
 
 function getJavaVersion(mcVersion) {
@@ -552,7 +429,7 @@ async function changeServer(newType, newVersion) {
     // Auto-backup world before version change
     const worldDir = SERVER_DIR + '/world';
     if (fs.existsSync(worldDir)) {
-        const backupName = `backup-before-${newVersion}`;
+    const backupName = (isAuto ? 'auto-' : '') + `${config.serverType}-${config.version}-${new Date().toISOString().slice(0,10)}-${timestamp}`;
         try {
             // Remove old backup with same name if exists
             try { execSync(`rm -rf ${BACKUPS_DIR}/${backupName}`); } catch(e) {}
@@ -688,23 +565,7 @@ wss.on('connection', (ws) => {
 });
 
 app.get('/api/status', (req, res) => res.json({ status, players, config, tunnel: { status: tunnelStatus, address: tunnelAddress } }));
-
-// Manual save state
-app.post('/api/save-state', async (req, res) => {
-    try {
-        await saveState();
-        await createAutoBackup();
-        res.json({ success: true, message: 'State and backup saved' });
-    } catch (err) {
-        res.status(500).json({ success: false, error: err.message });
-    }
-});
-
-// Get backup records from MongoDB
-app.get('/api/backup-records', async (req, res) => {
-    const records = await getBackupRecords();
-    res.json(records);
-});
+app.post('/api/save-state', async (req, res) => { await saveState(); res.json({ message: 'State saved' }); });
 app.get('/api/versions', (req, res) => res.json(cachedVersions));
 app.post('/api/start', async (req, res) => res.json(await startServer()));
 app.post('/api/stop', (req, res) => res.json(stopServer()));
@@ -736,26 +597,18 @@ const PORT = process.env.PORT || 3000;
 server.listen(PORT, async () => {
     console.log(`Dashboard on port ${PORT}`);
     ensureDirs(); loadConfig(); await loadVersions();
-    
-    // Connect to MongoDB and load state
-    const mongoConnected = await connectMongo();
-    if (mongoConnected) {
-        const savedState = await loadState();
-        if (savedState && savedState.config) {
-            config = { ...config, ...savedState.config };
-            saveConfig();
-            log('[Startup] Restored config from cloud: ' + config.serverType + ' ' + config.version);
-        }
+    const mongoOk = await connectMongo();
+    if (mongoOk) {
+        const s = await loadState();
+        if (s?.config) { config = { ...config, ...s.config }; saveConfig(); log("[Startup] Config restored from MongoDB"); }
         startAutoSave();
     }
-    
-    if (config.autoStart) { log('Auto-starting...'); startServer(); }
+    if (config.autoStart) { log("Auto-starting..."); startServer(); }
 });
 
-process.on('SIGTERM', async () => { 
-    log('[Shutdown] Saving state before exit...');
+process.on("SIGTERM", async () => {
     await saveState();
-    if (mcProcess) { mcProcess.stdin.write('save-all\n'); setTimeout(() => mcProcess?.stdin.write('stop\n'), 2000); }
+    if (mcProcess) { mcProcess.stdin.write("save-all\n"); setTimeout(() => mcProcess?.stdin.write("stop\n"), 2000); }
     stopTunnel();
     if (mongoClient) await mongoClient.close();
     setTimeout(() => process.exit(0), 12000);
@@ -786,7 +639,7 @@ function saveCloudIndex(index) {
     fs.writeFileSync(CLOUD_INDEX_FILE, JSON.stringify(index, null, 2));
 }
 
-async function createCloudBackup() {
+async function createCloudBackup(isAuto = false) {
     const worldDir = SERVER_DIR + '/world';
     if (!fs.existsSync(worldDir)) return { error: 'No world to backup' };
     
@@ -794,7 +647,7 @@ async function createCloudBackup() {
     broadcast({ type: 'log', data: '☁️ Compressing world...' });
     
     const timestamp = Date.now();
-    const backupName = `${config.serverType}-${config.version}-${new Date().toISOString().slice(0,10)}`;
+    const backupName = (isAuto ? 'auto-' : '') + `${config.serverType}-${config.version}-${new Date().toISOString().slice(0,10)}-${timestamp}`;
     const zipPath = `/tmp/mc-${timestamp}.zip`;
     
     // Snapshot metadata
@@ -841,9 +694,16 @@ async function createCloudBackup() {
             snapshot,
             uploadedAt: new Date().toISOString()
         });
-        // Keep only last 10
-        if (index.length > 10) index.length = 10;
-        saveCloudIndex(index);
+        // Keep only 5 auto backups, delete old ones from Pixxo
+        if (isAuto) {
+            const autoBackups = index.filter(b => b.name.startsWith("auto-"));
+            while (autoBackups.length > 5) {
+                const old = autoBackups.pop();
+                try { await pixxo.deleteFile(old.fileId); log("☁️ Deleted old auto: " + old.name); } catch(e) {}
+                const i = index.findIndex(x => x.fileId === old.fileId);
+                if (i >= 0) index.splice(i, 1);
+            }
+        }
         
         // Cleanup
         try { fs.unlinkSync(zipPath); } catch(e) {}

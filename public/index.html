@@ -141,6 +141,7 @@
                     <button class="btn btn-primary" id="startBtn" onclick="startServer()">▶ Start</button>
                     <button class="btn btn-secondary" id="restartBtn" onclick="restartServer()" disabled>↻</button>
                     <button class="btn btn-danger" id="stopBtn" onclick="stopServer()" disabled>■</button>
+                    <button class="btn btn-secondary" onclick="saveState()" title="Save state">💾</button>
                     <button class="btn btn-secondary" id="saveBtn" onclick="saveState()" title="Save state to cloud">💾</button>
                 </div>
             </div>
@@ -332,6 +333,7 @@
         
         async function startServer() { await fetch('/api/start', { method: 'POST' }); }
         async function stopServer() { await fetch('/api/stop', { method: 'POST' }); }
+        async function saveState() { const r = await fetch("/api/save-state", { method: "POST" }); const j = await r.json(); appendLog("[UI] " + (j.message || j.error)); }
         async function restartServer() { await fetch('/api/restart', { method: 'POST' }); }
         async function saveState() { const r = await fetch("/api/save-state", { method: "POST" }); const j = await r.json(); if (j.success) appendLog("[UI] " + j.message); }
         async function applyConfig() { await fetch('/api/change', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ serverType: $('serverType').value, version: $('version').value }) }); }
