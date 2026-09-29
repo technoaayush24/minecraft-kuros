@@ -377,7 +377,12 @@
             c.textContent += t + '\n'; c.scrollTop = c.scrollHeight;
         }
         
-        async function startServer() { await fetch('/api/start', { method: 'POST' }); }
+        async function startServer() { 
+            // Apply selected version first
+            await fetch('/api/change', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ serverType: $('serverType').value, version: $('version').value }) });
+            // Then start
+            await fetch('/api/start', { method: 'POST' }); 
+        }
         async function stopServer() { await fetch('/api/stop', { method: 'POST' }); }
         async function restartServer() { await fetch('/api/restart', { method: 'POST' }); }
         async function applyConfig() { await fetch('/api/change', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ serverType: $('serverType').value, version: $('version').value }) }); }
