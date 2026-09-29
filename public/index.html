@@ -551,9 +551,11 @@
             } else $('uptime').textContent = '--';
         }, 1000);
         
-        // DOM is ready since script is at end of body
-        updateVersions();
-        connect();
+        // Init on page load
+        (function init() {
+            try { updateVersions(); } catch(e) { console.error('updateVersions error:', e); }
+            try { connect(); } catch(e) { console.error('connect error:', e); }
+        })();
     </script>
 
     <div class="modal-overlay" id="modal">
