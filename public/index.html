@@ -557,7 +557,7 @@
         }, 1000);
         
         // Init on page load
-        (function init() {
+        window.onload = function() {
             $('console').textContent = 'Connecting...\n';
             try { updateVersions(); } catch(e) { $('console').textContent += 'Version error: ' + e.message + '\n'; }
             try { 
@@ -566,7 +566,7 @@
             } catch(e) { 
                 $('console').textContent += 'Connect error: ' + e.message + '\n'; 
             }
-        })();
+        };
     </script>
 
     <div class="modal-overlay" id="modal">
