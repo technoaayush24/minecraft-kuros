@@ -1,204 +1,583 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Minecraft Server</title>
+    <title>MC Server</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: 'Segoe UI', sans-serif; background: #1a1a2e; color: #eee; min-height: 100vh; }
-        .container { max-width: 1100px; margin: 0 auto; padding: 20px; }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        :root {
+            --bg: #0c0c0c;
+            --surface: #161616;
+            --surface2: #1e1e1e;
+            --border: #2a2a2a;
+            --text: #e4e4e4;
+            --text2: #888;
+            --accent: #22c55e;
+            --accent2: #16a34a;
+            --red: #ef4444;
+            --yellow: #eab308;
+            --blue: #3b82f6;
+        }
+        body {
+            font-family: 'Inter', -apple-system, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            line-height: 1.5;
+        }
         
-        .header { background: linear-gradient(135deg, #16213e, #0f3460); padding: 30px; border-radius: 12px; margin-bottom: 20px; text-align: center; }
-        .header h1 { font-size: 2rem; color: #4ade80; margin-bottom: 8px; }
-        .header p { opacity: 0.7; }
+        .layout {
+            display: grid;
+            grid-template-columns: 280px 1fr;
+            min-height: 100vh;
+        }
         
-        .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-bottom: 20px; }
-        .stat { background: #16213e; padding: 20px; border-radius: 10px; text-align: center; }
-        .stat .icon { font-size: 1.5rem; margin-bottom: 8px; }
-        .stat .value { font-size: 1.8rem; font-weight: bold; color: #4ade80; }
-        .stat .label { font-size: 0.75rem; opacity: 0.6; margin-top: 4px; }
-        .stat.warning .value { color: #fbbf24; }
-        .stat.error .value { color: #f87171; }
+        /* Sidebar */
+        .sidebar {
+            background: var(--surface);
+            border-right: 1px solid var(--border);
+            padding: 24px;
+            display: flex;
+            flex-direction: column;
+        }
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 32px;
+        }
+        .logo-icon {
+            width: 40px;
+            height: 40px;
+            background: linear-gradient(135deg, var(--accent), var(--blue));
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+        }
+        .logo h1 {
+            font-size: 18px;
+            font-weight: 600;
+        }
         
-        .grid { display: grid; grid-template-columns: 1fr 280px; gap: 20px; }
-        @media (max-width: 800px) { .grid { grid-template-columns: 1fr; } .stats { grid-template-columns: repeat(2, 1fr); } }
+        .status-card {
+            background: var(--surface2);
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 24px;
+        }
+        .status-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 16px;
+        }
+        .status-label {
+            color: var(--text2);
+            font-size: 13px;
+        }
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+        .status-badge.running { background: rgba(34,197,94,0.15); color: var(--accent); }
+        .status-badge.stopped { background: rgba(136,136,136,0.15); color: var(--text2); }
+        .status-badge.starting, .status-badge.downloading, .status-badge.installing { background: rgba(234,179,8,0.15); color: var(--yellow); }
+        .status-badge.error { background: rgba(239,68,68,0.15); color: var(--red); }
+        .status-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
         
-        .console { background: #0f0f1a; border-radius: 10px; overflow: hidden; }
-        .console-header { background: #16213e; padding: 12px 16px; display: flex; justify-content: space-between; align-items: center; }
-        .console-header h2 { font-size: 0.9rem; }
-        .console-output { height: 350px; overflow-y: auto; padding: 12px; font-family: 'Consolas', monospace; font-size: 0.8rem; color: #94a3b8; line-height: 1.5; }
-        .console-output .info { color: #60a5fa; }
-        .console-output .warn { color: #fbbf24; }
-        .console-output .error { color: #f87171; }
-        .console-output .player { color: #4ade80; }
-        .console-input { display: flex; border-top: 1px solid #1e293b; }
-        .console-input input { flex: 1; background: #0a0a12; border: none; padding: 12px; color: #eee; font-family: 'Consolas', monospace; font-size: 0.85rem; }
-        .console-input input:focus { outline: none; background: #111827; }
-        .console-input button { background: #4ade80; color: #000; border: none; padding: 12px 20px; cursor: pointer; font-weight: bold; }
+        .players-section { margin-top: auto; }
+        .players-title {
+            font-size: 12px;
+            color: var(--text2);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 12px;
+        }
+        .player-count {
+            font-size: 32px;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+        .player-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .player-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 13px;
+        }
+        .player-avatar {
+            width: 24px;
+            height: 24px;
+            border-radius: 4px;
+            background: var(--surface2);
+        }
+        .no-players {
+            color: var(--text2);
+            font-size: 13px;
+        }
         
-        .sidebar { display: flex; flex-direction: column; gap: 15px; }
-        .panel { background: #16213e; border-radius: 10px; padding: 16px; }
-        .panel h3 { font-size: 0.85rem; margin-bottom: 12px; color: #94a3b8; }
+        /* Main */
+        .main {
+            padding: 24px 32px;
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+            overflow-y: auto;
+        }
         
-        .connect-box { background: #0f0f1a; padding: 12px; border-radius: 6px; font-family: 'Consolas', monospace; font-size: 0.85rem; color: #4ade80; word-break: break-all; }
-        .connect-box small { display: block; margin-top: 8px; color: #64748b; font-family: 'Segoe UI', sans-serif; }
+        .topbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .server-info h2 {
+            font-size: 20px;
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+        .server-meta {
+            color: var(--text2);
+            font-size: 13px;
+        }
         
-        .player-list { list-style: none; }
-        .player-list li { padding: 8px 10px; background: #0f3460; border-radius: 6px; margin-bottom: 6px; display: flex; align-items: center; gap: 8px; font-size: 0.9rem; }
-        .player-list li::before { content: '🟢'; font-size: 0.6rem; }
-        .no-players { color: #64748b; font-style: italic; font-size: 0.85rem; }
+        .actions {
+            display: flex;
+            gap: 8px;
+        }
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 10px 16px;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            border: none;
+            transition: all 0.15s;
+        }
+        .btn-primary {
+            background: var(--accent);
+            color: #000;
+        }
+        .btn-primary:hover { background: var(--accent2); }
+        .btn-secondary {
+            background: var(--surface2);
+            color: var(--text);
+            border: 1px solid var(--border);
+        }
+        .btn-secondary:hover { background: var(--border); }
+        .btn-danger {
+            background: rgba(239,68,68,0.1);
+            color: var(--red);
+            border: 1px solid rgba(239,68,68,0.2);
+        }
+        .btn-danger:hover { background: rgba(239,68,68,0.2); }
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
         
-        .cmd-btn { display: block; width: 100%; padding: 10px; margin-bottom: 8px; background: #0f3460; border: none; border-radius: 6px; color: #eee; cursor: pointer; font-size: 0.85rem; text-align: left; }
-        .cmd-btn:hover { background: #1e40af; }
-        .cmd-btn span { opacity: 0.5; font-size: 0.75rem; }
+        /* Config Panel */
+        .config-panel {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 16px;
+        }
+        .config-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 16px;
+        }
+        .config-card label {
+            display: block;
+            font-size: 12px;
+            color: var(--text2);
+            margin-bottom: 8px;
+        }
+        .config-card select, .config-card input {
+            width: 100%;
+            padding: 10px 12px;
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: var(--text);
+            font-size: 14px;
+            font-family: inherit;
+        }
+        .config-card select:focus, .config-card input:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+        
+        /* Console */
+        .console-panel {
+            flex: 1;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            display: flex;
+            flex-direction: column;
+            min-height: 400px;
+            overflow: hidden;
+        }
+        .console-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px 16px;
+            border-bottom: 1px solid var(--border);
+        }
+        .console-title {
+            font-size: 13px;
+            font-weight: 500;
+        }
+        .console-actions {
+            display: flex;
+            gap: 8px;
+        }
+        .console-output {
+            flex: 1;
+            padding: 16px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
+            line-height: 1.6;
+            overflow-y: auto;
+            background: #0a0a0a;
+            color: #aaa;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+        .console-output .info { color: var(--blue); }
+        .console-output .warn { color: var(--yellow); }
+        .console-output .error { color: var(--red); }
+        .console-input {
+            display: flex;
+            border-top: 1px solid var(--border);
+        }
+        .console-input input {
+            flex: 1;
+            padding: 14px 16px;
+            background: var(--surface2);
+            border: none;
+            color: var(--text);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 13px;
+        }
+        .console-input input:focus { outline: none; }
+        .console-input button {
+            padding: 0 20px;
+            background: var(--accent);
+            color: #000;
+            border: none;
+            font-weight: 500;
+            cursor: pointer;
+        }
+        
+        /* Quick Commands */
+        .quick-cmds {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            padding: 12px 16px;
+            border-top: 1px solid var(--border);
+            background: var(--surface2);
+        }
+        .quick-cmd {
+            padding: 6px 12px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: var(--text2);
+            font-size: 12px;
+            cursor: pointer;
+            font-family: 'JetBrains Mono', monospace;
+        }
+        .quick-cmd:hover {
+            border-color: var(--accent);
+            color: var(--text);
+        }
+        
+        @media (max-width: 900px) {
+            .layout { grid-template-columns: 1fr; }
+            .sidebar { display: none; }
+            .config-panel { grid-template-columns: 1fr; }
+        }
     </style>
 </head>
 <body>
-    <div class="container">
-        <div class="header">
-            <h1>⛏️ Minecraft Server</h1>
-            <p>Kuros-hosted • Paper 1.21.1 • Java Edition</p>
-        </div>
-        
-        <div class="stats">
-            <div class="stat" id="statusCard">
-                <div class="icon">🖥️</div>
-                <div class="value" id="status">Starting</div>
-                <div class="label">STATUS</div>
+    <div class="layout">
+        <aside class="sidebar">
+            <div class="logo">
+                <div class="logo-icon">⛏</div>
+                <h1>MC Server</h1>
             </div>
-            <div class="stat">
-                <div class="icon">👥</div>
-                <div class="value" id="players">0</div>
-                <div class="label">PLAYERS</div>
-            </div>
-            <div class="stat">
-                <div class="icon">⏱️</div>
-                <div class="value" id="uptime">0m</div>
-                <div class="label">UPTIME</div>
-            </div>
-            <div class="stat">
-                <div class="icon">📊</div>
-                <div class="value" id="logs">0</div>
-                <div class="label">LOG LINES</div>
-            </div>
-        </div>
-        
-        <div class="grid">
-            <div class="console">
-                <div class="console-header">
-                    <h2>📋 Console</h2>
-                    <span id="connStatus" style="color:#4ade80;font-size:0.75rem;">● Connected</span>
+            
+            <div class="status-card">
+                <div class="status-row">
+                    <span class="status-label">Status</span>
+                    <span class="status-badge stopped" id="statusBadge">
+                        <span class="status-dot"></span>
+                        <span id="statusText">Stopped</span>
+                    </span>
                 </div>
-                <div class="console-output" id="output">Connecting...</div>
+                <div class="status-row" style="margin-bottom:0">
+                    <span class="status-label">Uptime</span>
+                    <span id="uptime">--</span>
+                </div>
+            </div>
+            
+            <div class="players-section">
+                <div class="players-title">Players Online</div>
+                <div class="player-count" id="playerCount">0</div>
+                <div class="player-list" id="playerList">
+                    <div class="no-players">No players online</div>
+                </div>
+            </div>
+        </aside>
+        
+        <main class="main">
+            <div class="topbar">
+                <div class="server-info">
+                    <h2 id="serverTitle">Minecraft Server</h2>
+                    <p class="server-meta" id="serverMeta">Not configured</p>
+                </div>
+                <div class="actions">
+                    <button class="btn btn-primary" id="startBtn" onclick="startServer()">▶ Start</button>
+                    <button class="btn btn-secondary" id="restartBtn" onclick="restartServer()" disabled>↻ Restart</button>
+                    <button class="btn btn-danger" id="stopBtn" onclick="stopServer()" disabled>■ Stop</button>
+                </div>
+            </div>
+            
+            <div class="config-panel">
+                <div class="config-card">
+                    <label>Server Type</label>
+                    <select id="serverType" onchange="updateVersions()">
+                        <option value="vanilla">Vanilla</option>
+                        <option value="paper">Paper / Purpur</option>
+                        <option value="forge">Forge (Modded)</option>
+                    </select>
+                </div>
+                <div class="config-card">
+                    <label>Version</label>
+                    <select id="version"></select>
+                </div>
+                <div class="config-card">
+                    <label>Memory (MB)</label>
+                    <input type="number" id="memory" value="400" min="256" max="1024">
+                </div>
+            </div>
+            
+            <button class="btn btn-secondary" onclick="applyConfig()" style="width:fit-content">
+                Apply & Restart
+            </button>
+            
+            <div class="console-panel">
+                <div class="console-header">
+                    <span class="console-title">Console</span>
+                    <div class="console-actions">
+                        <button class="btn btn-secondary" onclick="clearConsole()" style="padding:6px 12px;font-size:12px">Clear</button>
+                    </div>
+                </div>
+                <div class="console-output" id="console">Waiting for server...</div>
+                <div class="quick-cmds">
+                    <button class="quick-cmd" onclick="sendCmd('list')">list</button>
+                    <button class="quick-cmd" onclick="sendCmd('tps')">tps</button>
+                    <button class="quick-cmd" onclick="sendCmd('time set day')">day</button>
+                    <button class="quick-cmd" onclick="sendCmd('weather clear')">clear</button>
+                    <button class="quick-cmd" onclick="sendCmd('difficulty peaceful')">peaceful</button>
+                    <button class="quick-cmd" onclick="sendCmd('gamemode creative @a')">creative</button>
+                </div>
                 <div class="console-input">
                     <input type="text" id="cmdInput" placeholder="Enter command..." autocomplete="off">
                     <button onclick="sendCmd()">Send</button>
                 </div>
             </div>
-            
-            <div class="sidebar">
-                <div class="panel">
-                    <h3>🔗 SERVER ADDRESS</h3>
-                    <div class="connect-box" id="serverAddr">Loading...</div>
-                </div>
-                
-                <div class="panel">
-                    <h3>👥 ONLINE PLAYERS</h3>
-                    <ul class="player-list" id="playerList">
-                        <li class="no-players">No players online</li>
-                    </ul>
-                </div>
-                
-                <div class="panel">
-                    <h3>⚡ QUICK COMMANDS</h3>
-                    <button class="cmd-btn" onclick="sendCmd('list')">list <span>Show players</span></button>
-                    <button class="cmd-btn" onclick="sendCmd('tps')">tps <span>Server performance</span></button>
-                    <button class="cmd-btn" onclick="sendCmd('time set day')">time set day <span>Set daytime</span></button>
-                    <button class="cmd-btn" onclick="sendCmd('weather clear')">weather clear <span>Clear weather</span></button>
-                    <button class="cmd-btn" onclick="sendCmd('say Hello!')">say Hello! <span>Broadcast</span></button>
-                </div>
-            </div>
-        </div>
+        </main>
     </div>
     
     <script>
         const $ = id => document.getElementById(id);
-        let ws;
+        let ws, config = {}, status = 'stopped', startTime;
         
-        // Server address (MC port 25565 won't work on Kuros - just HTTP)
-        $('serverAddr').innerHTML = location.hostname + ':25565<small>⚠️ Note: Kuros only exposes HTTP port. MC port may not be accessible externally.</small>';
+        const versions = {
+            vanilla: ['1.21.1', '1.21', '1.20.6', '1.20.4', '1.20.2', '1.20.1', '1.19.4', '1.18.2'],
+            paper: ['1.21.1', '1.21', '1.20.6', '1.20.4', '1.20.2', '1.20.1', '1.19.4', '1.18.2'],
+            forge: ['1.20.1', '1.19.4', '1.18.2']
+        };
         
         function connect() {
             const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-            ws = new WebSocket(proto + '//' + location.host + '/ws/console');
-            
-            ws.onopen = () => {
-                $('connStatus').innerHTML = '● Connected';
-                $('connStatus').style.color = '#4ade80';
-            };
-            
-            ws.onclose = () => {
-                $('connStatus').innerHTML = '● Disconnected';
-                $('connStatus').style.color = '#f87171';
-                setTimeout(connect, 3000);
-            };
+            ws = new WebSocket(proto + '//' + location.host + '/ws');
             
             ws.onmessage = (e) => {
-                try {
-                    const msg = JSON.parse(e.data);
-                    if (msg.type === 'status') updateStatus(msg.status);
-                    else if (msg.type === 'log') appendLog(msg.data);
-                    else if (msg.type === 'logs') { $('output').innerHTML = ''; msg.data && appendLog(msg.data); }
-                    else if (msg.type === 'players') updatePlayers(msg.players);
-                } catch(e) {}
+                const msg = JSON.parse(e.data);
+                
+                if (msg.type === 'init') {
+                    config = msg.config || {};
+                    updateUI(msg.status);
+                    updatePlayers(msg.players || []);
+                    $('serverType').value = config.serverType || 'vanilla';
+                    updateVersions();
+                    $('version').value = config.version || '1.21.1';
+                    $('memory').value = config.memory || 400;
+                    if (msg.logs) {
+                        $('console').textContent = msg.logs.join('\n');
+                        $('console').scrollTop = $('console').scrollHeight;
+                    }
+                } else if (msg.type === 'status') {
+                    updateUI(msg.status);
+                } else if (msg.type === 'log') {
+                    appendLog(msg.data);
+                } else if (msg.type === 'logs') {
+                    $('console').textContent = msg.data || '';
+                } else if (msg.type === 'players') {
+                    updatePlayers(msg.players || []);
+                }
             };
+            
+            ws.onclose = () => setTimeout(connect, 2000);
         }
         
-        function updateStatus(status) {
-            const map = { starting: 'Starting...', downloading: 'Downloading...', running: 'ONLINE', restarting: 'Restarting...', error: 'ERROR' };
-            $('status').textContent = map[status] || status;
-            $('statusCard').className = 'stat' + (status === 'error' ? ' error' : status === 'running' ? '' : ' warning');
-        }
-        
-        function appendLog(text) {
-            const out = $('output');
-            text.split('\n').forEach(line => {
-                if (!line.trim()) return;
-                const span = document.createElement('div');
-                if (line.includes('WARN')) span.className = 'warn';
-                else if (line.includes('ERROR')) span.className = 'error';
-                else if (line.includes('INFO')) span.className = 'info';
-                else if (line.includes('logged in') || line.includes('left the game')) span.className = 'player';
-                span.textContent = line;
-                out.appendChild(span);
-            });
-            out.scrollTop = out.scrollHeight;
-            $('logs').textContent = out.childNodes.length;
+        function updateUI(newStatus) {
+            status = newStatus;
+            const badge = $('statusBadge');
+            const text = $('statusText');
+            
+            badge.className = 'status-badge ' + status;
+            
+            const labels = {
+                stopped: 'Stopped',
+                starting: 'Starting...',
+                running: 'Running',
+                stopping: 'Stopping...',
+                downloading: 'Downloading...',
+                installing: 'Installing...',
+                error: 'Error'
+            };
+            text.textContent = labels[status] || status;
+            
+            $('startBtn').disabled = status !== 'stopped' && status !== 'error';
+            $('stopBtn').disabled = status !== 'running';
+            $('restartBtn').disabled = status !== 'running';
+            
+            $('serverTitle').textContent = (config.serverType || 'vanilla').charAt(0).toUpperCase() + (config.serverType || 'vanilla').slice(1) + ' Server';
+            $('serverMeta').textContent = `Version ${config.version || '1.21.1'} • Port 25565`;
+            
+            if (status === 'running' && !startTime) startTime = Date.now();
+            if (status === 'stopped') startTime = null;
         }
         
         function updatePlayers(list) {
-            $('players').textContent = list.length;
-            $('playerList').innerHTML = list.length ? list.map(p => `<li>${p}</li>`).join('') : '<li class="no-players">No players online</li>';
+            $('playerCount').textContent = list.length;
+            if (list.length === 0) {
+                $('playerList').innerHTML = '<div class="no-players">No players online</div>';
+            } else {
+                $('playerList').innerHTML = list.map(p => `
+                    <div class="player-item">
+                        <img class="player-avatar" src="https://mc-heads.net/avatar/${p}/24" alt="">
+                        <span>${p}</span>
+                    </div>
+                `).join('');
+            }
+        }
+        
+        function updateVersions() {
+            const type = $('serverType').value;
+            const ver = $('version');
+            const current = ver.value;
+            ver.innerHTML = versions[type].map(v => `<option value="${v}">${v}</option>`).join('');
+            if (versions[type].includes(current)) ver.value = current;
+        }
+        
+        function appendLog(text) {
+            const con = $('console');
+            const lines = con.textContent.split('\n');
+            if (lines.length > 500) {
+                con.textContent = lines.slice(-400).join('\n');
+            }
+            
+            let cls = '';
+            if (text.includes('INFO')) cls = 'info';
+            else if (text.includes('WARN')) cls = 'warn';
+            else if (text.includes('ERROR')) cls = 'error';
+            
+            con.textContent += text + '\n';
+            con.scrollTop = con.scrollHeight;
+        }
+        
+        function clearConsole() {
+            $('console').textContent = '';
+        }
+        
+        async function startServer() {
+            await fetch('/api/start', { method: 'POST' });
+        }
+        
+        async function stopServer() {
+            await fetch('/api/stop', { method: 'POST' });
+        }
+        
+        async function restartServer() {
+            await fetch('/api/restart', { method: 'POST' });
+        }
+        
+        async function applyConfig() {
+            const serverType = $('serverType').value;
+            const version = $('version').value;
+            
+            await fetch('/api/change', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ serverType, version })
+            });
         }
         
         function sendCmd(cmd) {
             cmd = cmd || $('cmdInput').value.trim();
-            if (!cmd || !ws || ws.readyState !== WebSocket.OPEN) return;
-            ws.send(JSON.stringify({ type: 'command', data: cmd }));
+            if (!cmd) return;
+            
+            fetch('/api/command', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ cmd })
+            });
+            
             $('cmdInput').value = '';
         }
         
-        $('cmdInput').addEventListener('keydown', e => { if (e.key === 'Enter') sendCmd(); });
+        $('cmdInput').addEventListener('keydown', e => {
+            if (e.key === 'Enter') sendCmd();
+        });
         
-        // Update uptime
+        // Uptime updater
         setInterval(() => {
-            fetch('/api/status').then(r => r.json()).then(d => {
-                const m = Math.floor(d.uptime / 60);
-                $('uptime').textContent = m < 60 ? m + 'm' : Math.floor(m/60) + 'h ' + (m%60) + 'm';
-            }).catch(() => {});
-        }, 30000);
+            if (startTime) {
+                const diff = Math.floor((Date.now() - startTime) / 1000);
+                const h = Math.floor(diff / 3600);
+                const m = Math.floor((diff % 3600) / 60);
+                const s = diff % 60;
+                $('uptime').textContent = h > 0 ? `${h}h ${m}m` : `${m}m ${s}s`;
+            } else {
+                $('uptime').textContent = '--';
+            }
+        }, 1000);
         
+        updateVersions();
         connect();
     </script>
 </body>
