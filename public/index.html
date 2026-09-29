@@ -11,7 +11,7 @@
         html, body { height: 100%; overflow: hidden; }
         body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); }
         
-        .layout { display: grid; grid-template-columns: 260px 1fr; height: 100vh; overflow: hidden; }
+        .layout { display: grid; grid-template-columns: 240px 1fr; height: 100vh; overflow: hidden; }
         
         .sidebar { background: var(--surface); border-right: 1px solid var(--border); padding: 20px; display: flex; flex-direction: column; gap: 16px; overflow-y: auto; }
         .logo { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
@@ -26,25 +26,21 @@
         .status-badge.stopped { background: rgba(136,136,136,0.15); color: var(--text2); }
         .status-badge.starting, .status-badge.downloading, .status-badge.installing { background: rgba(234,179,8,0.15); color: var(--yellow); }
         .status-badge.error { background: rgba(239,68,68,0.15); color: var(--red); }
-        .status-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+        .status-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; animation: pulse 2s infinite; }
+        .status-badge.running .status-dot { animation: none; }
+        .status-badge.stopped .status-dot { animation: none; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
         
         .stat-row { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 12px; }
         .stat-row:last-child { border: none; }
         .stat-label { color: var(--text2); }
         .stat-value { font-weight: 500; }
         
-        .player-count { font-size: 28px; font-weight: 600; margin-bottom: 6px; }
-        .player-list { display: flex; flex-direction: column; gap: 6px; max-height: 100px; overflow-y: auto; }
+        .player-count { font-size: 32px; font-weight: 600; margin-bottom: 6px; }
+        .player-list { display: flex; flex-direction: column; gap: 6px; max-height: 120px; overflow-y: auto; }
         .player-item { display: flex; align-items: center; gap: 8px; font-size: 12px; }
         .player-avatar { width: 20px; height: 20px; border-radius: 3px; }
         .no-players { color: var(--text2); font-size: 12px; }
-        
-        .tunnel-card { background: linear-gradient(135deg, #1a1a2e, #16213e); }
-        .tunnel-address { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--accent); background: rgba(0,0,0,0.3); padding: 8px; border-radius: 6px; word-break: break-all; margin: 8px 0; }
-        .tunnel-status { font-size: 11px; color: var(--text2); }
-        .tunnel-status.active { color: var(--accent); }
-        .tunnel-btns { margin-top: 10px; display: flex; gap: 6px; }
-        .tunnel-btns button { flex: 1; font-size: 11px; padding: 6px; }
         
         .main { padding: 20px 24px; display: flex; flex-direction: column; gap: 16px; overflow: hidden; height: 100vh; }
         
@@ -64,8 +60,9 @@
         .config-bar { display: flex; gap: 12px; flex-shrink: 0; align-items: flex-end; flex-wrap: wrap; }
         .config-item { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 12px; }
         .config-item label { display: block; font-size: 11px; color: var(--text2); margin-bottom: 6px; }
-        .config-item select { width: 160px; padding: 8px 10px; background: var(--surface2); border: 1px solid var(--border); border-radius: 4px; color: var(--text); font-size: 13px; }
+        .config-item select { width: 150px; padding: 8px 10px; background: var(--surface2); border: 1px solid var(--border); border-radius: 4px; color: var(--text); font-size: 13px; }
         .config-item select:focus { outline: none; border-color: var(--accent); }
+        .java-info { font-size: 10px; color: var(--text2); margin-top: 4px; }
         
         .console { flex: 1; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
         .console-header { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; border-bottom: 1px solid var(--border); background: var(--surface2); flex-shrink: 0; }
@@ -79,7 +76,8 @@
         .console-input input:focus { outline: none; }
         .console-input button { padding: 0 16px; background: var(--accent); color: #000; border: none; font-weight: 500; font-size: 12px; cursor: pointer; }
         
-        .java-info { font-size: 10px; color: var(--text2); margin-top: 4px; }
+        .info-card { background: linear-gradient(135deg, #1a1a2e, #16213e); padding: 12px; border-radius: 8px; font-size: 11px; color: var(--text2); line-height: 1.5; }
+        .info-card strong { color: var(--text); }
         
         @media (max-width: 900px) { .layout { grid-template-columns: 1fr; } .sidebar { display: none; } }
     </style>
@@ -110,15 +108,10 @@
                 <div class="player-list" id="playerList"><div class="no-players">No players online</div></div>
             </div>
             
-            <div class="card tunnel-card">
-                <div class="card-title">🌐 playit.gg Tunnel</div>
-                <div class="tunnel-status" id="tunnelStatus">Not connected</div>
-                <div class="tunnel-address" id="tunnelAddress" style="display:none"></div>
-                <div class="tunnel-btns">
-                    <button class="btn btn-secondary" onclick="startTunnel()">Start</button>
-                    <button class="btn btn-secondary" onclick="stopTunnel()">Stop</button>
-                    <button class="btn btn-secondary" onclick="copyTunnel()">Copy</button>
-                </div>
+            <div class="info-card">
+                <strong>💾 Auto-Save</strong><br>
+                World data persists across restarts.<br>
+                Switch versions anytime - each keeps its own world.
             </div>
         </aside>
         
@@ -141,16 +134,16 @@
                     <select id="serverType" onchange="updateVersions()">
                         <option value="vanilla">Vanilla</option>
                         <option value="paper">Paper</option>
-                        <option value="neoforge">NeoForge</option>
                         <option value="fabric">Fabric</option>
+                        <option value="neoforge">NeoForge</option>
                     </select>
                 </div>
                 <div class="config-item">
                     <label>Version</label>
                     <select id="version" onchange="updateJavaInfo()"></select>
-                    <div class="java-info" id="javaInfo">Requires Java 21</div>
+                    <div class="java-info" id="javaInfo">Java 21</div>
                 </div>
-                <button class="btn btn-secondary" onclick="applyConfig()">Apply & Restart</button>
+                <button class="btn btn-secondary" onclick="applyConfig()">Switch Server</button>
             </div>
             
             <div class="console">
@@ -158,7 +151,7 @@
                     <span class="console-title">Console</span>
                     <button class="btn btn-secondary" onclick="clearConsole()" style="padding:4px 10px;font-size:11px">Clear</button>
                 </div>
-                <div class="console-output" id="console">Waiting for server...</div>
+                <div class="console-output" id="console">Server starting automatically...</div>
                 <div class="quick-cmds">
                     <button class="quick-cmd" onclick="sendCmd('list')">list</button>
                     <button class="quick-cmd" onclick="sendCmd('tps')">tps</button>
@@ -169,7 +162,7 @@
                     <button class="quick-cmd" onclick="sendCmd('gamemode creative @a')">creative</button>
                     <button class="quick-cmd" onclick="sendCmd('gamemode survival @a')">survival</button>
                     <button class="quick-cmd" onclick="sendCmd('give @a diamond 64')">diamonds</button>
-                    <button class="quick-cmd" onclick="sendCmd('op @a')">op all</button>
+                    <button class="quick-cmd" onclick="sendCmd('save-all')">save</button>
                 </div>
                 <div class="console-input">
                     <input type="text" id="cmdInput" placeholder="Enter command..." autocomplete="off">
@@ -182,11 +175,10 @@
     <script>
         const $ = id => document.getElementById(id);
         let ws, config = {}, status = 'stopped', startTime, versions = {};
-        let currentTunnelAddress = '';
         
         function getJavaVersion(mcVersion) {
             const ver = mcVersion.split('.').map(Number);
-            const major = ver[0], minor = ver[1] || 0, patch = ver[2] || 0;
+            const minor = ver[1] || 0, patch = ver[2] || 0;
             if (minor >= 21) return 21;
             if (minor === 20 && patch >= 5) return 21;
             if (minor >= 17) return 17;
@@ -196,7 +188,7 @@
         function updateJavaInfo() {
             const ver = $('version').value;
             const java = getJavaVersion(ver);
-            $('javaInfo').textContent = `Requires Java ${java}`;
+            $('javaInfo').textContent = `Java ${java}`;
             $('javaDisplay').textContent = java;
         }
         
@@ -216,27 +208,27 @@
                     updateVersions();
                     $('version').value = config.version || '1.21.4';
                     updateJavaInfo();
-                    if (msg.logs) { $('console').textContent = msg.logs.join('\n'); $('console').scrollTop = $('console').scrollHeight; }
-                    if (msg.playit) updatePlayit(msg.playit);
+                    if (msg.logs?.length) { 
+                        $('console').textContent = msg.logs.join('\n'); 
+                        $('console').scrollTop = $('console').scrollHeight; 
+                    }
                 } else if (msg.type === 'status') {
-                    updateUI(msg.status);
+                    updateUI(msg.status, msg.message);
                 } else if (msg.type === 'log') {
                     appendLog(msg.data);
                 } else if (msg.type === 'players') {
                     updatePlayers(msg.players || []);
-                } else if (msg.type === 'playit') {
-                    updatePlayit(msg);
                 }
             };
             
             ws.onclose = () => setTimeout(connect, 2000);
         }
         
-        function updateUI(newStatus) {
+        function updateUI(newStatus, message) {
             status = newStatus;
             $('statusBadge').className = 'status-badge ' + status;
             const labels = { stopped: 'Stopped', starting: 'Starting...', running: 'Running', stopping: 'Stopping...', downloading: 'Downloading...', installing: 'Installing...', error: 'Error' };
-            $('statusText').textContent = labels[status] || status;
+            $('statusText').textContent = message || labels[status] || status;
             
             $('startBtn').disabled = !['stopped', 'error'].includes(status);
             $('stopBtn').disabled = status !== 'running';
@@ -256,24 +248,6 @@
         function updatePlayers(list) {
             $('playerCount').textContent = list.length;
             $('playerList').innerHTML = list.length ? list.map(p => `<div class="player-item"><img class="player-avatar" src="https://mc-heads.net/avatar/${p}/20" onerror="this.style.display='none'"><span>${p}</span></div>`).join('') : '<div class="no-players">No players online</div>';
-        }
-        
-        function updatePlayit(data) {
-            if (data.status === 'connected' && data.address) {
-                currentTunnelAddress = data.address;
-                $('tunnelStatus').textContent = '● Connected';
-                $('tunnelStatus').className = 'tunnel-status active';
-                $('tunnelAddress').textContent = data.address;
-                $('tunnelAddress').style.display = 'block';
-            } else if (data.status === 'claim' && data.url) {
-                $('tunnelStatus').innerHTML = '<a href="' + data.url + '" target="_blank" style="color:var(--accent)">Click to claim tunnel →</a>';
-                $('tunnelAddress').style.display = 'none';
-            } else {
-                currentTunnelAddress = '';
-                $('tunnelStatus').textContent = 'Not connected';
-                $('tunnelStatus').className = 'tunnel-status';
-                $('tunnelAddress').style.display = 'none';
-            }
         }
         
         function updateVersions() {
@@ -299,9 +273,6 @@
         async function startServer() { await fetch('/api/start', { method: 'POST' }); }
         async function stopServer() { await fetch('/api/stop', { method: 'POST' }); }
         async function restartServer() { await fetch('/api/restart', { method: 'POST' }); }
-        async function startTunnel() { await fetch('/api/playit/start', { method: 'POST' }); }
-        async function stopTunnel() { await fetch('/api/playit/stop', { method: 'POST' }); }
-        function copyTunnel() { if (currentTunnelAddress) { navigator.clipboard.writeText(currentTunnelAddress); alert('Copied: ' + currentTunnelAddress); } }
         
         async function applyConfig() {
             await fetch('/api/change', {
