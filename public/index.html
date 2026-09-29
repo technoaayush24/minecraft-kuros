@@ -8,315 +8,82 @@
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         :root {
-            --bg: #0c0c0c;
-            --surface: #161616;
-            --surface2: #1e1e1e;
-            --border: #2a2a2a;
-            --text: #e4e4e4;
-            --text2: #888;
-            --accent: #22c55e;
-            --accent2: #16a34a;
-            --red: #ef4444;
-            --yellow: #eab308;
-            --blue: #3b82f6;
+            --bg: #0c0c0c; --surface: #161616; --surface2: #1e1e1e; --border: #2a2a2a;
+            --text: #e4e4e4; --text2: #888; --accent: #22c55e; --accent2: #16a34a;
+            --red: #ef4444; --yellow: #eab308; --blue: #3b82f6; --purple: #a855f7;
         }
-        body {
-            font-family: 'Inter', -apple-system, sans-serif;
-            background: var(--bg);
-            color: var(--text);
-            min-height: 100vh;
-            line-height: 1.5;
-        }
+        body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+        .layout { display: grid; grid-template-columns: 260px 1fr; min-height: 100vh; }
         
-        .layout {
-            display: grid;
-            grid-template-columns: 280px 1fr;
-            min-height: 100vh;
-        }
+        .sidebar { background: var(--surface); border-right: 1px solid var(--border); padding: 20px; display: flex; flex-direction: column; gap: 20px; }
+        .logo { display: flex; align-items: center; gap: 10px; }
+        .logo-icon { width: 36px; height: 36px; background: linear-gradient(135deg, var(--accent), var(--blue)); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 18px; }
+        .logo h1 { font-size: 16px; font-weight: 600; }
         
-        /* Sidebar */
-        .sidebar {
-            background: var(--surface);
-            border-right: 1px solid var(--border);
-            padding: 24px;
-            display: flex;
-            flex-direction: column;
-        }
-        .logo {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            margin-bottom: 32px;
-        }
-        .logo-icon {
-            width: 40px;
-            height: 40px;
-            background: linear-gradient(135deg, var(--accent), var(--blue));
-            border-radius: 10px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 20px;
-        }
-        .logo h1 {
-            font-size: 18px;
-            font-weight: 600;
-        }
+        .card { background: var(--surface2); border-radius: 10px; padding: 16px; }
+        .card-title { font-size: 11px; color: var(--text2); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 10px; }
         
-        .status-card {
-            background: var(--surface2);
-            border-radius: 12px;
-            padding: 20px;
-            margin-bottom: 24px;
-        }
-        .status-row {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            margin-bottom: 16px;
-        }
-        .status-label {
-            color: var(--text2);
-            font-size: 13px;
-        }
-        .status-badge {
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-            padding: 4px 10px;
-            border-radius: 20px;
-            font-size: 12px;
-            font-weight: 500;
-        }
+        .status-badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 16px; font-size: 12px; font-weight: 500; }
         .status-badge.running { background: rgba(34,197,94,0.15); color: var(--accent); }
         .status-badge.stopped { background: rgba(136,136,136,0.15); color: var(--text2); }
         .status-badge.starting, .status-badge.downloading, .status-badge.installing { background: rgba(234,179,8,0.15); color: var(--yellow); }
         .status-badge.error { background: rgba(239,68,68,0.15); color: var(--red); }
         .status-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
         
-        .players-section { margin-top: auto; }
-        .players-title {
-            font-size: 12px;
-            color: var(--text2);
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            margin-bottom: 12px;
-        }
-        .player-count {
-            font-size: 32px;
-            font-weight: 600;
-            margin-bottom: 8px;
-        }
-        .player-list {
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
-        }
-        .player-item {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            font-size: 13px;
-        }
-        .player-avatar {
-            width: 24px;
-            height: 24px;
-            border-radius: 4px;
-            background: var(--surface2);
-        }
-        .no-players {
-            color: var(--text2);
-            font-size: 13px;
-        }
+        .stat-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border); }
+        .stat-row:last-child { border: none; }
+        .stat-label { font-size: 12px; color: var(--text2); }
+        .stat-value { font-size: 13px; font-weight: 500; }
         
-        /* Main */
-        .main {
-            padding: 24px 32px;
-            display: flex;
-            flex-direction: column;
-            gap: 24px;
-            overflow-y: auto;
-        }
+        .player-count { font-size: 28px; font-weight: 600; margin-bottom: 8px; }
+        .player-list { display: flex; flex-direction: column; gap: 6px; max-height: 150px; overflow-y: auto; }
+        .player-item { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+        .player-avatar { width: 20px; height: 20px; border-radius: 3px; }
+        .no-players { color: var(--text2); font-size: 12px; }
         
-        .topbar {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-        }
-        .server-info h2 {
-            font-size: 20px;
-            font-weight: 600;
-            margin-bottom: 4px;
-        }
-        .server-meta {
-            color: var(--text2);
-            font-size: 13px;
-        }
+        .tunnel-card { background: linear-gradient(135deg, #1a1a2e, #16213e); }
+        .tunnel-address { font-family: 'JetBrains Mono', monospace; font-size: 13px; color: var(--accent); background: rgba(0,0,0,0.3); padding: 10px; border-radius: 6px; word-break: break-all; margin: 8px 0; }
+        .tunnel-status { font-size: 11px; color: var(--text2); }
+        .tunnel-status.active { color: var(--accent); }
         
-        .actions {
-            display: flex;
-            gap: 8px;
-        }
-        .btn {
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-            padding: 10px 16px;
-            border-radius: 8px;
-            font-size: 13px;
-            font-weight: 500;
-            cursor: pointer;
-            border: none;
-            transition: all 0.15s;
-        }
-        .btn-primary {
-            background: var(--accent);
-            color: #000;
-        }
+        .main { padding: 20px 24px; display: flex; flex-direction: column; gap: 20px; overflow-y: auto; }
+        
+        .topbar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
+        .server-info h2 { font-size: 18px; font-weight: 600; }
+        .server-meta { color: var(--text2); font-size: 12px; margin-top: 2px; }
+        
+        .actions { display: flex; gap: 8px; }
+        .btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; border-radius: 6px; font-size: 12px; font-weight: 500; cursor: pointer; border: none; transition: all 0.15s; }
+        .btn-primary { background: var(--accent); color: #000; }
         .btn-primary:hover { background: var(--accent2); }
-        .btn-secondary {
-            background: var(--surface2);
-            color: var(--text);
-            border: 1px solid var(--border);
-        }
+        .btn-secondary { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
         .btn-secondary:hover { background: var(--border); }
-        .btn-danger {
-            background: rgba(239,68,68,0.1);
-            color: var(--red);
-            border: 1px solid rgba(239,68,68,0.2);
-        }
-        .btn-danger:hover { background: rgba(239,68,68,0.2); }
-        .btn:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-        }
+        .btn-danger { background: rgba(239,68,68,0.1); color: var(--red); border: 1px solid rgba(239,68,68,0.2); }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
         
-        /* Config Panel */
-        .config-panel {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 16px;
-        }
-        .config-card {
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: 12px;
-            padding: 16px;
-        }
-        .config-card label {
-            display: block;
-            font-size: 12px;
-            color: var(--text2);
-            margin-bottom: 8px;
-        }
-        .config-card select, .config-card input {
-            width: 100%;
-            padding: 10px 12px;
-            background: var(--surface2);
-            border: 1px solid var(--border);
-            border-radius: 6px;
-            color: var(--text);
-            font-size: 14px;
-            font-family: inherit;
-        }
-        .config-card select:focus, .config-card input:focus {
-            outline: none;
-            border-color: var(--accent);
-        }
+        .config-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+        .config-item { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 12px; }
+        .config-item label { display: block; font-size: 11px; color: var(--text2); margin-bottom: 6px; }
+        .config-item select, .config-item input { width: 100%; padding: 8px 10px; background: var(--surface2); border: 1px solid var(--border); border-radius: 4px; color: var(--text); font-size: 13px; }
+        .config-item select:focus, .config-item input:focus { outline: none; border-color: var(--accent); }
         
-        /* Console */
-        .console-panel {
-            flex: 1;
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: 12px;
-            display: flex;
-            flex-direction: column;
-            min-height: 400px;
-            overflow: hidden;
-        }
-        .console-header {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 12px 16px;
-            border-bottom: 1px solid var(--border);
-        }
-        .console-title {
-            font-size: 13px;
-            font-weight: 500;
-        }
-        .console-actions {
-            display: flex;
-            gap: 8px;
-        }
-        .console-output {
-            flex: 1;
-            padding: 16px;
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 12px;
-            line-height: 1.6;
-            overflow-y: auto;
-            background: #0a0a0a;
-            color: #aaa;
-            white-space: pre-wrap;
-            word-break: break-all;
-        }
+        .console { flex: 1; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; display: flex; flex-direction: column; min-height: 350px; overflow: hidden; }
+        .console-header { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; border-bottom: 1px solid var(--border); background: var(--surface2); }
+        .console-title { font-size: 12px; font-weight: 500; }
+        .console-output { flex: 1; padding: 12px; font-family: 'JetBrains Mono', monospace; font-size: 11px; line-height: 1.6; overflow-y: auto; background: #0a0a0a; color: #888; white-space: pre-wrap; word-break: break-all; }
         .console-output .info { color: var(--blue); }
         .console-output .warn { color: var(--yellow); }
         .console-output .error { color: var(--red); }
-        .console-input {
-            display: flex;
-            border-top: 1px solid var(--border);
-        }
-        .console-input input {
-            flex: 1;
-            padding: 14px 16px;
-            background: var(--surface2);
-            border: none;
-            color: var(--text);
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 13px;
-        }
+        .console-output .success { color: var(--accent); }
+        .quick-cmds { display: flex; gap: 6px; flex-wrap: wrap; padding: 10px 14px; border-top: 1px solid var(--border); background: var(--surface2); }
+        .quick-cmd { padding: 5px 10px; background: var(--surface); border: 1px solid var(--border); border-radius: 4px; color: var(--text2); font-size: 11px; cursor: pointer; font-family: 'JetBrains Mono', monospace; }
+        .quick-cmd:hover { border-color: var(--accent); color: var(--text); }
+        .console-input { display: flex; border-top: 1px solid var(--border); }
+        .console-input input { flex: 1; padding: 12px 14px; background: var(--surface2); border: none; color: var(--text); font-family: 'JetBrains Mono', monospace; font-size: 12px; }
         .console-input input:focus { outline: none; }
-        .console-input button {
-            padding: 0 20px;
-            background: var(--accent);
-            color: #000;
-            border: none;
-            font-weight: 500;
-            cursor: pointer;
-        }
+        .console-input button { padding: 0 16px; background: var(--accent); color: #000; border: none; font-weight: 500; font-size: 12px; cursor: pointer; }
         
-        /* Quick Commands */
-        .quick-cmds {
-            display: flex;
-            gap: 8px;
-            flex-wrap: wrap;
-            padding: 12px 16px;
-            border-top: 1px solid var(--border);
-            background: var(--surface2);
-        }
-        .quick-cmd {
-            padding: 6px 12px;
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: 6px;
-            color: var(--text2);
-            font-size: 12px;
-            cursor: pointer;
-            font-family: 'JetBrains Mono', monospace;
-        }
-        .quick-cmd:hover {
-            border-color: var(--accent);
-            color: var(--text);
-        }
-        
-        @media (max-width: 900px) {
-            .layout { grid-template-columns: 1fr; }
-            .sidebar { display: none; }
-            .config-panel { grid-template-columns: 1fr; }
-        }
+        @media (max-width: 900px) { .layout { grid-template-columns: 1fr; } .sidebar { display: none; } .config-grid { grid-template-columns: repeat(2, 1fr); } }
     </style>
 </head>
 <body>
@@ -327,25 +94,39 @@
                 <h1>MC Server</h1>
             </div>
             
-            <div class="status-card">
-                <div class="status-row">
-                    <span class="status-label">Status</span>
-                    <span class="status-badge stopped" id="statusBadge">
-                        <span class="status-dot"></span>
-                        <span id="statusText">Stopped</span>
-                    </span>
+            <div class="card">
+                <div class="card-title">Server Status</div>
+                <div class="stat-row">
+                    <span class="stat-label">Status</span>
+                    <span class="status-badge stopped" id="statusBadge"><span class="status-dot"></span><span id="statusText">Stopped</span></span>
                 </div>
-                <div class="status-row" style="margin-bottom:0">
-                    <span class="status-label">Uptime</span>
-                    <span id="uptime">--</span>
+                <div class="stat-row">
+                    <span class="stat-label">Uptime</span>
+                    <span class="stat-value" id="uptime">--</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Type</span>
+                    <span class="stat-value" id="typeDisplay">Vanilla</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Version</span>
+                    <span class="stat-value" id="versionDisplay">1.21.1</span>
                 </div>
             </div>
             
-            <div class="players-section">
-                <div class="players-title">Players Online</div>
+            <div class="card">
+                <div class="card-title">Players Online</div>
                 <div class="player-count" id="playerCount">0</div>
-                <div class="player-list" id="playerList">
-                    <div class="no-players">No players online</div>
+                <div class="player-list" id="playerList"><div class="no-players">No players online</div></div>
+            </div>
+            
+            <div class="card tunnel-card">
+                <div class="card-title">🌐 playit.gg Tunnel</div>
+                <div class="tunnel-status" id="tunnelStatus">Not connected</div>
+                <div class="tunnel-address" id="tunnelAddress" style="display:none"></div>
+                <div style="margin-top:10px;display:flex;gap:6px;">
+                    <button class="btn btn-secondary" style="flex:1;font-size:11px;padding:6px" onclick="startTunnel()">Start</button>
+                    <button class="btn btn-secondary" style="flex:1;font-size:11px;padding:6px" onclick="stopTunnel()">Stop</button>
                 </div>
             </div>
         </aside>
@@ -354,7 +135,7 @@
             <div class="topbar">
                 <div class="server-info">
                     <h2 id="serverTitle">Minecraft Server</h2>
-                    <p class="server-meta" id="serverMeta">Not configured</p>
+                    <p class="server-meta" id="serverMeta">Configure and start your server</p>
                 </div>
                 <div class="actions">
                     <button class="btn btn-primary" id="startBtn" onclick="startServer()">▶ Start</button>
@@ -363,44 +144,46 @@
                 </div>
             </div>
             
-            <div class="config-panel">
-                <div class="config-card">
+            <div class="config-grid">
+                <div class="config-item">
                     <label>Server Type</label>
                     <select id="serverType" onchange="updateVersions()">
                         <option value="vanilla">Vanilla</option>
                         <option value="paper">Paper / Purpur</option>
-                        <option value="forge">Forge (Modded)</option>
+                        <option value="fabric">Fabric</option>
+                        <option value="forge">Forge</option>
                     </select>
                 </div>
-                <div class="config-card">
+                <div class="config-item">
                     <label>Version</label>
                     <select id="version"></select>
                 </div>
-                <div class="config-card">
+                <div class="config-item">
                     <label>Memory (MB)</label>
-                    <input type="number" id="memory" value="400" min="256" max="1024">
+                    <input type="number" id="memory" value="400" min="256" max="1024" step="64">
+                </div>
+                <div class="config-item" style="display:flex;align-items:flex-end;">
+                    <button class="btn btn-secondary" onclick="applyConfig()" style="width:100%">Apply Changes</button>
                 </div>
             </div>
             
-            <button class="btn btn-secondary" onclick="applyConfig()" style="width:fit-content">
-                Apply & Restart
-            </button>
-            
-            <div class="console-panel">
+            <div class="console">
                 <div class="console-header">
                     <span class="console-title">Console</span>
-                    <div class="console-actions">
-                        <button class="btn btn-secondary" onclick="clearConsole()" style="padding:6px 12px;font-size:12px">Clear</button>
-                    </div>
+                    <button class="btn btn-secondary" onclick="clearConsole()" style="padding:4px 10px;font-size:11px">Clear</button>
                 </div>
-                <div class="console-output" id="console">Waiting for server...</div>
+                <div class="console-output" id="console">Waiting for server to start...</div>
                 <div class="quick-cmds">
                     <button class="quick-cmd" onclick="sendCmd('list')">list</button>
                     <button class="quick-cmd" onclick="sendCmd('tps')">tps</button>
                     <button class="quick-cmd" onclick="sendCmd('time set day')">day</button>
+                    <button class="quick-cmd" onclick="sendCmd('time set night')">night</button>
                     <button class="quick-cmd" onclick="sendCmd('weather clear')">clear</button>
                     <button class="quick-cmd" onclick="sendCmd('difficulty peaceful')">peaceful</button>
+                    <button class="quick-cmd" onclick="sendCmd('difficulty normal')">normal</button>
                     <button class="quick-cmd" onclick="sendCmd('gamemode creative @a')">creative</button>
+                    <button class="quick-cmd" onclick="sendCmd('gamemode survival @a')">survival</button>
+                    <button class="quick-cmd" onclick="sendCmd('give @a diamond 64')">diamonds</button>
                 </div>
                 <div class="console-input">
                     <input type="text" id="cmdInput" placeholder="Enter command..." autocomplete="off">
@@ -412,13 +195,7 @@
     
     <script>
         const $ = id => document.getElementById(id);
-        let ws, config = {}, status = 'stopped', startTime;
-        
-        const versions = {
-            vanilla: ['1.21.1', '1.21', '1.20.6', '1.20.4', '1.20.2', '1.20.1', '1.19.4', '1.18.2'],
-            paper: ['1.21.1', '1.21', '1.20.6', '1.20.4', '1.20.2', '1.20.1', '1.19.4', '1.18.2'],
-            forge: ['1.20.1', '1.19.4', '1.18.2']
-        };
+        let ws, config = {}, status = 'stopped', startTime, versions = {};
         
         function connect() {
             const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -429,24 +206,24 @@
                 
                 if (msg.type === 'init') {
                     config = msg.config || {};
+                    versions = msg.versions || {};
                     updateUI(msg.status);
                     updatePlayers(msg.players || []);
+                    updateVersionDropdowns();
                     $('serverType').value = config.serverType || 'vanilla';
                     updateVersions();
                     $('version').value = config.version || '1.21.1';
                     $('memory').value = config.memory || 400;
-                    if (msg.logs) {
-                        $('console').textContent = msg.logs.join('\n');
-                        $('console').scrollTop = $('console').scrollHeight;
-                    }
+                    if (msg.logs) { $('console').textContent = msg.logs.join('\n'); $('console').scrollTop = $('console').scrollHeight; }
+                    if (msg.playit) updatePlayit(msg.playit);
                 } else if (msg.type === 'status') {
                     updateUI(msg.status);
                 } else if (msg.type === 'log') {
                     appendLog(msg.data);
-                } else if (msg.type === 'logs') {
-                    $('console').textContent = msg.data || '';
                 } else if (msg.type === 'players') {
                     updatePlayers(msg.players || []);
+                } else if (msg.type === 'playit') {
+                    updatePlayit(msg);
                 }
             };
             
@@ -455,27 +232,17 @@
         
         function updateUI(newStatus) {
             status = newStatus;
-            const badge = $('statusBadge');
-            const text = $('statusText');
+            $('statusBadge').className = 'status-badge ' + status;
+            const labels = { stopped: 'Stopped', starting: 'Starting...', running: 'Running', stopping: 'Stopping...', downloading: 'Downloading...', installing: 'Installing...', error: 'Error' };
+            $('statusText').textContent = labels[status] || status;
             
-            badge.className = 'status-badge ' + status;
-            
-            const labels = {
-                stopped: 'Stopped',
-                starting: 'Starting...',
-                running: 'Running',
-                stopping: 'Stopping...',
-                downloading: 'Downloading...',
-                installing: 'Installing...',
-                error: 'Error'
-            };
-            text.textContent = labels[status] || status;
-            
-            $('startBtn').disabled = status !== 'stopped' && status !== 'error';
+            $('startBtn').disabled = !['stopped', 'error'].includes(status);
             $('stopBtn').disabled = status !== 'running';
             $('restartBtn').disabled = status !== 'running';
             
-            $('serverTitle').textContent = (config.serverType || 'vanilla').charAt(0).toUpperCase() + (config.serverType || 'vanilla').slice(1) + ' Server';
+            $('typeDisplay').textContent = (config.serverType || 'vanilla').charAt(0).toUpperCase() + (config.serverType || 'vanilla').slice(1);
+            $('versionDisplay').textContent = config.version || '1.21.1';
+            $('serverTitle').textContent = $('typeDisplay').textContent + ' Server';
             $('serverMeta').textContent = `Version ${config.version || '1.21.1'} • Port 25565`;
             
             if (status === 'running' && !startTime) startTime = Date.now();
@@ -484,100 +251,79 @@
         
         function updatePlayers(list) {
             $('playerCount').textContent = list.length;
-            if (list.length === 0) {
-                $('playerList').innerHTML = '<div class="no-players">No players online</div>';
+            $('playerList').innerHTML = list.length ? list.map(p => `<div class="player-item"><img class="player-avatar" src="https://mc-heads.net/avatar/${p}/20" alt=""><span>${p}</span></div>`).join('') : '<div class="no-players">No players online</div>';
+        }
+        
+        function updatePlayit(data) {
+            if (data.status === 'connected' && data.address) {
+                $('tunnelStatus').textContent = '● Connected';
+                $('tunnelStatus').className = 'tunnel-status active';
+                $('tunnelAddress').textContent = data.address;
+                $('tunnelAddress').style.display = 'block';
+            } else if (data.status === 'claim' && data.url) {
+                $('tunnelStatus').innerHTML = 'Claim your tunnel: <a href="' + data.url + '" target="_blank" style="color:var(--accent)">' + data.url + '</a>';
+                $('tunnelAddress').style.display = 'none';
             } else {
-                $('playerList').innerHTML = list.map(p => `
-                    <div class="player-item">
-                        <img class="player-avatar" src="https://mc-heads.net/avatar/${p}/24" alt="">
-                        <span>${p}</span>
-                    </div>
-                `).join('');
+                $('tunnelStatus').textContent = 'Not connected';
+                $('tunnelStatus').className = 'tunnel-status';
+                $('tunnelAddress').style.display = 'none';
             }
+        }
+        
+        function updateVersionDropdowns() {
+            // Will be called after versions loaded from server
         }
         
         function updateVersions() {
             const type = $('serverType').value;
             const ver = $('version');
             const current = ver.value;
-            ver.innerHTML = versions[type].map(v => `<option value="${v}">${v}</option>`).join('');
-            if (versions[type].includes(current)) ver.value = current;
+            const list = versions[type] || ['1.21.1'];
+            ver.innerHTML = list.map(v => `<option value="${v}">${v}</option>`).join('');
+            if (list.includes(current)) ver.value = current;
         }
         
         function appendLog(text) {
             const con = $('console');
             const lines = con.textContent.split('\n');
-            if (lines.length > 500) {
-                con.textContent = lines.slice(-400).join('\n');
-            }
-            
-            let cls = '';
-            if (text.includes('INFO')) cls = 'info';
-            else if (text.includes('WARN')) cls = 'warn';
-            else if (text.includes('ERROR')) cls = 'error';
-            
+            if (lines.length > 400) con.textContent = lines.slice(-300).join('\n');
             con.textContent += text + '\n';
             con.scrollTop = con.scrollHeight;
         }
         
-        function clearConsole() {
-            $('console').textContent = '';
-        }
+        function clearConsole() { $('console').textContent = ''; }
         
-        async function startServer() {
-            await fetch('/api/start', { method: 'POST' });
-        }
-        
-        async function stopServer() {
-            await fetch('/api/stop', { method: 'POST' });
-        }
-        
-        async function restartServer() {
-            await fetch('/api/restart', { method: 'POST' });
-        }
+        async function startServer() { await fetch('/api/start', { method: 'POST' }); }
+        async function stopServer() { await fetch('/api/stop', { method: 'POST' }); }
+        async function restartServer() { await fetch('/api/restart', { method: 'POST' }); }
+        async function startTunnel() { await fetch('/api/playit/start', { method: 'POST' }); }
+        async function stopTunnel() { await fetch('/api/playit/stop', { method: 'POST' }); }
         
         async function applyConfig() {
-            const serverType = $('serverType').value;
-            const version = $('version').value;
-            
             await fetch('/api/change', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ serverType, version })
+                body: JSON.stringify({ serverType: $('serverType').value, version: $('version').value })
             });
         }
         
         function sendCmd(cmd) {
             cmd = cmd || $('cmdInput').value.trim();
             if (!cmd) return;
-            
-            fetch('/api/command', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ cmd })
-            });
-            
+            fetch('/api/command', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cmd }) });
             $('cmdInput').value = '';
         }
         
-        $('cmdInput').addEventListener('keydown', e => {
-            if (e.key === 'Enter') sendCmd();
-        });
+        $('cmdInput').addEventListener('keydown', e => { if (e.key === 'Enter') sendCmd(); });
         
-        // Uptime updater
         setInterval(() => {
             if (startTime) {
-                const diff = Math.floor((Date.now() - startTime) / 1000);
-                const h = Math.floor(diff / 3600);
-                const m = Math.floor((diff % 3600) / 60);
-                const s = diff % 60;
-                $('uptime').textContent = h > 0 ? `${h}h ${m}m` : `${m}m ${s}s`;
-            } else {
-                $('uptime').textContent = '--';
-            }
+                const s = Math.floor((Date.now() - startTime) / 1000);
+                const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
+                $('uptime').textContent = h > 0 ? `${h}h ${m}m` : `${m}m ${s % 60}s`;
+            } else { $('uptime').textContent = '--'; }
         }, 1000);
         
-        updateVersions();
         connect();
     </script>
 </body>
