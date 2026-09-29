@@ -297,13 +297,60 @@ async function restartServer() {
 }
 
 async function changeServer(newType, newVersion) {
+    // Validate version
+    if (!cachedVersions[newType]?.includes(newVersion)) {
+        log(`Invalid version: ${newType} ${newVersion}`);
+        return { error: 'Invalid version' };
+    }
+    
     const wasRunning = !!mcProcess;
-    if (wasRunning) { stopServer(); await new Promise(r => { const i = setInterval(() => { if (!mcProcess) { clearInterval(i); r(); } }, 500); setTimeout(() => { clearInterval(i); r(); }, 20000); }); }
-    config.serverType = newType; config.version = newVersion; saveConfig();
+    
+    // Stop server if running and wait for it to fully stop
+    if (wasRunning) {
+        log('Stopping server for version change...');
+        if (mcProcess) {
+            mcProcess.stdin.write('stop\n');
+            // Wait up to 30 seconds for graceful stop
+            await new Promise(resolve => {
+                const checkInterval = setInterval(() => {
+                    if (!mcProcess) {
+                        clearInterval(checkInterval);
+                        resolve();
+                    }
+                }, 500);
+                setTimeout(() => {
+                    clearInterval(checkInterval);
+                    if (mcProcess) {
+                        mcProcess.kill('SIGKILL');
+                        mcProcess = null;
+                    }
+                    resolve();
+                }, 30000);
+            });
+        }
+        // Extra wait to ensure everything is closed
+        await new Promise(r => setTimeout(r, 2000));
+    }
+    
+    // Update config
+    config.serverType = newType;
+    config.version = newVersion;
+    saveConfig();
+    
+    // Clean up old files
+    log('Cleaning old server files...');
     try { fs.unlinkSync(SERVER_DIR + '/server.jar'); } catch(e) {}
-    try { execSync(`rm -rf ${SERVER_DIR}/.fabric ${SERVER_DIR}/libraries ${SERVER_DIR}/.mixin*`); } catch(e) {}
+    try { execSync(`rm -rf ${SERVER_DIR}/.fabric ${SERVER_DIR}/libraries ${SERVER_DIR}/.mixin* ${SERVER_DIR}/versions`); } catch(e) {}
+    
     log(`Changed to ${newType} ${newVersion}`);
-    if (wasRunning) return startServer();
+    status = 'stopped';
+    broadcast({ type: 'status', status });
+    
+    if (wasRunning) {
+        // Small delay before restart
+        await new Promise(r => setTimeout(r, 1000));
+        return startServer();
+    }
     return { success: true };
 }
 
