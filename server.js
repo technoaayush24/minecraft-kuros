@@ -34,20 +34,27 @@ function ensureDirs() {
 }
 
 function getJavaVersion(mcVersion) {
-    // New MC versions (26.x+) need Java 25
-    if (mcVersion.match(/^2[6-9]\./)) return 25;
-    // MC 25.x needs Java 21
-    if (mcVersion.match(/^25\./)) return 21;
+    // MC 26.1+ needs Java 25
+    if (mcVersion.match(/^26\./)) return 25;
     
-    // Parse old-style version like "1.21.4" or "1.20.1"
+    // Parse 1.x.x versions
     const match = mcVersion.match(/^1\.(\d+)(?:\.(\d+))?/);
-    if (!match) return 21;
+    if (!match) return 25; // Default to latest for unknown
     const minor = parseInt(match[1]) || 0;
     const patch = parseInt(match[2]) || 0;
+    
+    // Java 21: MC 1.20.5 - 1.21.x
     if (minor >= 21) return 21;
     if (minor === 20 && patch >= 5) return 21;
-    if (minor >= 17) return 17;
-    if (minor >= 12) return 8;
+    
+    // Java 17: MC 1.18 - 1.20.4
+    if (minor >= 18) return 17;
+    if (minor === 20 && patch <= 4) return 17;
+    
+    // Java 16: MC 1.17.x
+    if (minor === 17) return 16;
+    
+    // Java 8: MC 1.7 - 1.16.5
     return 8;
 }
 
@@ -172,11 +179,12 @@ function stopTunnel() {
 async function installJava(version) {
     const urls = {
         8: 'https://github.com/adoptium/temurin8-binaries/releases/download/jdk8u422-b05/OpenJDK8U-jre_x64_alpine-linux_hotspot_8u422b05.tar.gz',
+        16: 'https://github.com/adoptium/temurin16-binaries/releases/download/jdk-16.0.2%2B7/OpenJDK16U-jre_x64_alpine-linux_hotspot_16.0.2_7.tar.gz',
         17: 'https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.12%2B7/OpenJDK17U-jre_x64_alpine-linux_hotspot_17.0.12_7.tar.gz',
         21: 'https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.4%2B7/OpenJDK21U-jre_x64_alpine-linux_hotspot_21.0.4_7.tar.gz',
         25: 'https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.4.1%2B1/OpenJDK25U-jre_x64_alpine-linux_hotspot_25.0.4.1_1.tar.gz'
     };
-    const extractDirs = { 8: 'jdk8u422-b05-jre', 17: 'jdk-17.0.12+7-jre', 21: 'jdk-21.0.4+7-jre', 25: 'jdk-25.0.4.1+1-jre' };
+    const extractDirs = { 8: 'jdk8u422-b05-jre', 16: 'jdk-16.0.2+7-jre', 17: 'jdk-17.0.12+7-jre', 21: 'jdk-21.0.4+7-jre', 25: 'jdk-25.0.4.1+1-jre' };
     const dir = `${JAVA_DIR}/jre${version}`;
     if (fs.existsSync(dir + '/bin/java')) return true;
     log(`Installing Java ${version}...`);
