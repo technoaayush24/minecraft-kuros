@@ -107,20 +107,6 @@
         .input-row { display: flex; gap: 6px; margin-top: 8px; }
         .input-row input { flex: 1; padding: 6px 8px; background: var(--surface); border: 1px solid var(--border); border-radius: 4px; color: var(--text); font-size: 11px; }
         
-        
-        /* Modal */
-        .modal-overlay { position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.7); display:none; align-items:center; justify-content:center; z-index:1000; }
-        .modal-overlay.show { display:flex; }
-        .modal { background:var(--surface); border-radius:12px; padding:20px; max-width:400px; width:90%; }
-        .modal-title { font-size:14px; font-weight:600; margin-bottom:12px; }
-        .modal-text { font-size:12px; color:var(--text2); margin-bottom:16px; }
-        .modal-btns { display:flex; gap:8px; justify-content:flex-end; }
-        .toast { position:fixed; bottom:20px; right:20px; padding:12px 20px; border-radius:8px; font-size:12px; z-index:1001; animation:slideIn 0.3s; }
-        .toast.success { background:var(--accent); color:#000; }
-        .toast.error { background:var(--red); color:#fff; }
-        .toast.info { background:var(--blue); color:#fff; }
-        @keyframes slideIn { from { transform:translateX(100%); opacity:0; } to { transform:translateX(0); opacity:1; } }
-
         @media (max-width: 768px) { .layout { grid-template-columns: 1fr; } .sidebar { display: none; } }
     </style>
 </head>
@@ -166,26 +152,7 @@
                     <option value="fabric">Fabric</option>
                 </select>
                 <label>Version</label>
-                <select id="version">
-                    <option value="26.3">26.3</option>
-                    <option value="26.2">26.2</option>
-                    <option value="26.1">26.1</option>
-                    <option value="26.0">26.0</option>
-                    <option value="25.1">25.1</option>
-                    <option value="25.0">25.0</option>
-                    <option value="1.21.4" selected>1.21.4</option>
-                    <option value="1.21.3">1.21.3</option>
-                    <option value="1.21.1">1.21.1</option>
-                    <option value="1.21">1.21</option>
-                    <option value="1.20.6">1.20.6</option>
-                    <option value="1.20.4">1.20.4</option>
-                    <option value="1.20.1">1.20.1</option>
-                    <option value="1.19.4">1.19.4</option>
-                    <option value="1.18.2">1.18.2</option>
-                    <option value="1.16.5">1.16.5</option>
-                    <option value="1.12.2">1.12.2</option>
-                    <option value="1.8.9">1.8.9</option>
-                </select>
+                <select id="version"></select>
                 <button class="btn btn-secondary btn-sm" onclick="applyConfig()">Apply</button>
             </div>
             
@@ -266,13 +233,8 @@
                         <p style="font-size:10px;color:var(--text2);margin-top:8px">Reset deletes the world. A new one generates on restart.</p>
                     </div>
                     <div class="world-card">
-                        <div class="world-title">Local Backups</div>
+                        <div class="world-title">Backups</div>
                         <div id="backupsList"></div>
-                    </div>
-                    <div class="world-card">
-                        <div class="world-title">☁️ Cloud Backups (Pixxo)</div>
-                        <button class="btn btn-primary btn-sm" onclick="cloudBackup()" style="margin-bottom:8px">Upload to Cloud</button>
-                        <div id="cloudBackupsList"></div>
                     </div>
                 </div>
             </div>
@@ -281,11 +243,7 @@
     
     <script>
         const $ = id => document.getElementById(id);
-        let ws, config = {}, status = 'stopped', startTime, versions = {
-            vanilla: ['26.3', '26.2', '26.1', '26.0', '25.1', '25.0', '1.21.4', '1.21.3', '1.21.1', '1.21', '1.20.6', '1.20.4', '1.20.1', '1.19.4', '1.18.2', '1.16.5', '1.12.2', '1.8.9'],
-            paper: ['1.21.4', '1.21.3', '1.21.1', '1.21', '1.20.6', '1.20.4', '1.20.1', '1.19.4', '1.18.2', '1.16.5'],
-            fabric: ['1.21.4', '1.21.3', '1.21.1', '1.21', '1.20.6', '1.20.4', '1.20.1', '1.19.4', '1.18.2']
-        };
+        let ws, config = {}, status = 'stopped', startTime, versions = {};
         let currentPath = '', editingFile = null;
         
         function showTab(name) {
@@ -295,7 +253,7 @@
             document.querySelector(`.tab[onclick="showTab('${name}')"]`).classList.add('active');
             if (name === 'files') loadFiles();
             if (name === 'plugins') loadPlugins();
-            if (name === 'world') { loadBackups(); loadCloudBackups(); }
+            if (name === 'world') loadBackups();
         }
         
         function connect() {
@@ -304,18 +262,12 @@
             ws.onmessage = (e) => {
                 const msg = JSON.parse(e.data);
                 if (msg.type === 'init') {
-                    config = msg.config || {}; if (msg.versions && Object.keys(msg.versions).length) versions = msg.versions;
+                    config = msg.config || {}; versions = msg.versions || {};
                     updateUI(msg.status); updatePlayers(msg.players || []);
                     if (msg.tunnel) updateTunnel(msg.tunnel);
                     $('serverType').value = config.serverType || 'vanilla';
-                    // Set server type first
-                    $('serverType').value = config.serverType || 'vanilla';
-                    // Then load versions for that type
                     updateVersions();
-                    // Then set the saved version
-                    setTimeout(() => {
-                        $('version').value = config.version || '1.21.4';
-                    }, 100);
+                    $('version').value = config.version || '1.21.4';
                     if (msg.logs?.length) { $('console').textContent = msg.logs.join('\n'); $('console').scrollTop = $('console').scrollHeight; }
                 } else if (msg.type === 'status') updateUI(msg.status);
                 else if (msg.type === 'log') appendLog(msg.data);
@@ -377,12 +329,7 @@
             c.textContent += t + '\n'; c.scrollTop = c.scrollHeight;
         }
         
-        async function startServer() { 
-            // Apply selected version first
-            await fetch('/api/change', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ serverType: $('serverType').value, version: $('version').value }) });
-            // Then start
-            await fetch('/api/start', { method: 'POST' }); 
-        }
+        async function startServer() { await fetch('/api/start', { method: 'POST' }); }
         async function stopServer() { await fetch('/api/stop', { method: 'POST' }); }
         async function restartServer() { await fetch('/api/restart', { method: 'POST' }); }
         async function applyConfig() { await fetch('/api/change', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ serverType: $('serverType').value, version: $('version').value }) }); }
@@ -450,10 +397,9 @@
         }
         
         async function removePlugin(name, type) {
-            showModal('Remove Plugin', 'Remove ' + name + '?', 'Remove', async () => {
-                await fetch('/api/plugins/remove', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, type }) });
-                loadPlugins();
-            });
+            if (!confirm('Remove ' + name + '?')) return;
+            await fetch('/api/plugins/remove', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, type }) });
+            loadPlugins();
         }
         
         // World
@@ -469,8 +415,9 @@
         }
         
         async function resetWorld() {
-            showModal('⚠️ Reset World', 'Delete world permanently? This cannot be undone!', 'Delete', async () => {
-            await fetch('/api/world/reset', { method: 'POST' }); toast('World reset', 'success'); loadBackups(); }); return
+            if (!confirm('Delete world? This cannot be undone!')) return;
+            await fetch('/api/world/reset', { method: 'POST' });
+            loadBackups();
         }
         
         async function restoreBackup(name) {
@@ -485,70 +432,6 @@
             loadBackups();
         }
         
-        // Modal & Toast
-        let modalCallback = null;
-        function showModal(title, text, confirmText, callback) {
-            $('modalTitle').textContent = title;
-            $('modalText').textContent = text;
-            $('modalConfirm').textContent = confirmText || 'Confirm';
-            $('modalConfirm').className = confirmText === 'Delete' ? 'btn btn-danger' : 'btn btn-primary';
-            modalCallback = callback;
-            $('modal').classList.add('show');
-        }
-        function closeModal() { $('modal').classList.remove('show'); modalCallback = null; }
-        $('modalConfirm').onclick = () => { if(modalCallback) modalCallback(); closeModal(); };
-        
-        function toast(msg, type='info') {
-            const t = document.createElement('div');
-            t.className = 'toast ' + type;
-            t.textContent = msg;
-            document.getElementById('toastContainer').appendChild(t);
-            setTimeout(() => t.remove(), 3000);
-        }
-        
-        async function cloudBackup() {
-            showModal('☁️ Cloud Backup', 'Upload current world to Pixxo cloud?', 'Upload', async () => {
-                toast('Uploading...', 'info');
-                const res = await fetch('/api/cloud/backup', { method: 'POST' }).then(r=>r.json());
-                if (res.error) toast('Failed: ' + res.error, 'error');
-                else toast('Backup uploaded!', 'success');
-                loadCloudBackups();
-            });
-        }
-        
-        async function loadCloudBackups() {
-            const res = await fetch('/api/cloud/list').then(r=>r.json());
-            if (!res || !res.length) {
-                $('cloudBackupsList').innerHTML = '<div style="color:var(--text2);font-size:11px">No cloud backups yet</div>';
-                return;
-            }
-            $('cloudBackupsList').innerHTML = res.map(b => {
-                const info = b.snapshot ? `${b.snapshot.serverType} ${b.snapshot.version}` : b.name;
-                const date = b.uploadedAt ? new Date(b.uploadedAt).toLocaleDateString() : '';
-                return `<div class="backup-item"><div><div style="font-size:11px">${info}</div><div style="font-size:9px;color:var(--text2)">${date}</div></div><div><button class="btn btn-sm btn-secondary" onclick="restoreCloud('${b.fileId}','${info}')">Restore</button> <button class="btn btn-sm btn-danger" onclick="deleteCloud('${b.fileId}')">×</button></div></div>`;
-            }).join('');
-        }
-        
-        async function restoreCloud(fileId, name) {
-            if (status === 'running') { toast('Stop server first!', 'error'); return; }
-            showModal('☁️ Restore Backup', `Restore "${name}"? Current world will be backed up locally first.`, 'Restore', async () => {
-                toast('Downloading...', 'info');
-                const res = await fetch('/api/cloud/restore', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({fileId}) }).then(r=>r.json());
-                if (res.error) toast('Failed: ' + res.error, 'error');
-                else toast('Restored! Start server to play.', 'success');
-                loadCloudBackups();
-                loadBackups();
-            });
-        }
-        
-        async function deleteCloud(fileId) {
-            showModal('Delete Backup', 'Delete this cloud backup permanently?', 'Delete', async () => {
-                await fetch('/api/cloud/delete', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({fileId}) });
-                toast('Deleted', 'success');
-                loadCloudBackups();
-            });
-        }
-        
         setInterval(() => {
             if (startTime) {
                 const s = Math.floor((Date.now() - startTime) / 1000);
@@ -556,27 +439,7 @@
             } else $('uptime').textContent = '--';
         }, 1000);
         
-        // Init on page load
-        // Init immediately
-        function initApp() {
-            $('console').textContent = 'Connecting...\n';
-            try { updateVersions(); } catch(e) { $('console').textContent += 'Version error: ' + e.message + '\n'; }
-            try { connect(); $('console').textContent += 'WebSocket connecting...\n'; } catch(e) { $('console').textContent += 'Connect error: ' + e.message + '\n'; }
-        }
-        setTimeout(initApp, 0);
+        connect();
     </script>
-
-    <div class="modal-overlay" id="modal">
-        <div class="modal">
-            <div class="modal-title" id="modalTitle">Confirm</div>
-            <div class="modal-text" id="modalText">Are you sure?</div>
-            <div class="modal-btns">
-                <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
-                <button class="btn btn-primary" id="modalConfirm">Confirm</button>
-            </div>
-        </div>
-    </div>
-    <div id="toastContainer"></div>
-
 </body>
 </html>
