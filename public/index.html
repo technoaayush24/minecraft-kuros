@@ -285,7 +285,7 @@
             ws.onmessage = (e) => {
                 const msg = JSON.parse(e.data);
                 if (msg.type === 'init') {
-                    config = msg.config || {}; versions = msg.versions || {};
+                    config = msg.config || {}; if (msg.versions && Object.keys(msg.versions).length) versions = msg.versions;
                     updateUI(msg.status); updatePlayers(msg.players || []);
                     if (msg.tunnel) updateTunnel(msg.tunnel);
                     $('serverType').value = config.serverType || 'vanilla';
