@@ -16,8 +16,8 @@ let mcProcess = null;
 let mcLogs = [];
 let mcStatus = 'stopped';
 let players = [];
+let setupInProgress = false;
 
-// Broadcast to all WebSocket clients
 function broadcast(data) {
     wss.clients.forEach(client => {
         if (client.readyState === WebSocket.OPEN) {
@@ -26,61 +26,74 @@ function broadcast(data) {
     });
 }
 
-// Setup and download server
+function log(msg) {
+    console.log(msg);
+    mcLogs.push(msg + '\n');
+    broadcast({ type: 'log', data: msg + '\n' });
+}
+
+// Setup Java and MC server
 async function setupServer() {
+    if (setupInProgress) return false;
+    setupInProgress = true;
+    
     const mcDir = '/tmp/minecraft';
+    const jreDir = '/tmp/jdk-21.0.4+7-jre';
     
-    if (!fs.existsSync(mcDir)) {
-        fs.mkdirSync(mcDir, { recursive: true });
-    }
-    
-    // Check if Java is available
     try {
-        execSync('java -version 2>&1');
-        console.log('Java found');
-    } catch (e) {
-        console.log('Java not found, downloading...');
-        mcStatus = 'downloading-java';
-        broadcast({ type: 'status', status: mcStatus, message: 'Downloading Java...' });
-        
-        try {
-            // Download portable JRE
-            execSync('wget -q -O /tmp/jre.tar.gz https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.4%2B7/OpenJDK21U-jre_x64_alpine-linux_hotspot_21.0.4_7.tar.gz', { timeout: 120000 });
-            execSync('cd /tmp && tar -xzf jre.tar.gz');
-            process.env.JAVA_HOME = '/tmp/jdk-21.0.4+7-jre';
-            process.env.PATH = `/tmp/jdk-21.0.4+7-jre/bin:${process.env.PATH}`;
-            console.log('Java downloaded');
-        } catch (e2) {
-            console.error('Failed to download Java:', e2.message);
-            mcStatus = 'error';
-            broadcast({ type: 'status', status: 'error', message: 'Failed to download Java' });
-            return false;
+        if (!fs.existsSync(mcDir)) {
+            fs.mkdirSync(mcDir, { recursive: true });
         }
-    }
-    
-    // Download Minecraft server if not exists
-    const serverJar = path.join(mcDir, 'server.jar');
-    if (!fs.existsSync(serverJar)) {
-        mcStatus = 'downloading-mc';
-        broadcast({ type: 'status', status: mcStatus, message: 'Downloading Minecraft server...' });
         
-        try {
-            // Download Paper MC (lightweight)
-            execSync(`wget -q -O ${serverJar} https://api.papermc.io/v2/projects/paper/versions/1.21.1/builds/119/downloads/paper-1.21.1-119.jar`, { timeout: 120000 });
-            console.log('Minecraft server downloaded');
-        } catch (e) {
-            console.error('Failed to download MC:', e.message);
-            mcStatus = 'error';
-            broadcast({ type: 'status', status: 'error', message: 'Failed to download Minecraft' });
-            return false;
+        // Check/Download Java
+        if (!fs.existsSync(jreDir)) {
+            log('[Setup] Downloading Java JRE 21 (this takes ~1 minute)...');
+            mcStatus = 'downloading-java';
+            broadcast({ type: 'status', status: mcStatus, message: 'Downloading Java...' });
+            
+            try {
+                execSync('wget -q -O /tmp/jre.tar.gz "https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.4%2B7/OpenJDK21U-jre_x64_alpine-linux_hotspot_21.0.4_7.tar.gz"', { 
+                    timeout: 180000,
+                    stdio: 'inherit'
+                });
+                log('[Setup] Extracting Java...');
+                execSync('cd /tmp && tar -xzf jre.tar.gz', { timeout: 60000 });
+                log('[Setup] Java ready!');
+            } catch (e) {
+                log('[Setup] Failed to download Java: ' + e.message);
+                mcStatus = 'error';
+                setupInProgress = false;
+                return false;
+            }
+        } else {
+            log('[Setup] Java already installed');
         }
-    }
-    
-    // Create eula.txt
-    fs.writeFileSync(path.join(mcDir, 'eula.txt'), 'eula=true\n');
-    
-    // Create server.properties
-    fs.writeFileSync(path.join(mcDir, 'server.properties'), `
+        
+        // Download Minecraft server
+        const serverJar = path.join(mcDir, 'server.jar');
+        if (!fs.existsSync(serverJar)) {
+            log('[Setup] Downloading Minecraft server (Paper 1.21.1)...');
+            mcStatus = 'downloading-mc';
+            broadcast({ type: 'status', status: mcStatus, message: 'Downloading Minecraft...' });
+            
+            try {
+                execSync(`wget -q -O ${serverJar} "https://api.papermc.io/v2/projects/paper/versions/1.21.1/builds/119/downloads/paper-1.21.1-119.jar"`, { 
+                    timeout: 120000 
+                });
+                log('[Setup] Minecraft server downloaded!');
+            } catch (e) {
+                log('[Setup] Failed to download MC: ' + e.message);
+                mcStatus = 'error';
+                setupInProgress = false;
+                return false;
+            }
+        } else {
+            log('[Setup] Minecraft server already downloaded');
+        }
+        
+        // Create configs
+        fs.writeFileSync(path.join(mcDir, 'eula.txt'), 'eula=true\n');
+        fs.writeFileSync(path.join(mcDir, 'server.properties'), `
 server-port=25565
 online-mode=false
 max-players=10
@@ -93,29 +106,39 @@ motd=\\u00a7a\\u00a7lKuros\\u00a7r Minecraft Server
 enable-command-block=true
 max-tick-time=120000
 `.trim());
-    
-    return true;
+        
+        log('[Setup] Configuration ready!');
+        setupInProgress = false;
+        return true;
+        
+    } catch (e) {
+        log('[Setup] Error: ' + e.message);
+        mcStatus = 'error';
+        setupInProgress = false;
+        return false;
+    }
 }
 
-// Start Minecraft server
+// Start MC
 async function startMC() {
-    if (mcProcess) {
-        return { error: 'Server already running' };
-    }
+    if (mcProcess) return { error: 'Already running' };
+    if (setupInProgress) return { error: 'Setup in progress' };
     
     mcStatus = 'starting';
     mcLogs = [];
-    broadcast({ type: 'status', status: mcStatus, message: 'Setting up...' });
+    broadcast({ type: 'status', status: mcStatus });
     
     const ready = await setupServer();
     if (!ready) return { error: 'Setup failed' };
     
-    const mcDir = '/tmp/minecraft';
-    const javaPath = process.env.JAVA_HOME ? `${process.env.JAVA_HOME}/bin/java` : 'java';
+    log('[Server] Starting Minecraft server...');
     
-    mcProcess = spawn(javaPath, ['-Xms256M', '-Xmx450M', '-jar', 'server.jar', 'nogui'], {
+    const javaPath = '/tmp/jdk-21.0.4+7-jre/bin/java';
+    const mcDir = '/tmp/minecraft';
+    
+    mcProcess = spawn(javaPath, ['-Xms256M', '-Xmx400M', '-jar', 'server.jar', 'nogui'], {
         cwd: mcDir,
-        env: process.env
+        env: { ...process.env, JAVA_HOME: '/tmp/jdk-21.0.4+7-jre' }
     });
     
     mcProcess.stdout.on('data', (data) => {
@@ -124,23 +147,15 @@ async function startMC() {
         if (mcLogs.length > 500) mcLogs.shift();
         broadcast({ type: 'log', data: line });
         
-        // Detect server ready
         if (line.includes('Done') && line.includes('For help')) {
             mcStatus = 'running';
-            broadcast({ type: 'status', status: 'running', message: 'Server is running!' });
+            broadcast({ type: 'status', status: 'running' });
         }
         
-        // Detect player join/leave
-        const joinMatch = line.match(/(\w+) joined the game/);
-        const leaveMatch = line.match(/(\w+) left the game/);
-        if (joinMatch) {
-            players.push(joinMatch[1]);
-            broadcast({ type: 'players', players });
-        }
-        if (leaveMatch) {
-            players = players.filter(p => p !== leaveMatch[1]);
-            broadcast({ type: 'players', players });
-        }
+        const join = line.match(/(\w+) joined the game/);
+        const leave = line.match(/(\w+) left the game/);
+        if (join) { players.push(join[1]); broadcast({ type: 'players', players }); }
+        if (leave) { players = players.filter(p => p !== leave[1]); broadcast({ type: 'players', players }); }
     });
     
     mcProcess.stderr.on('data', (data) => {
@@ -153,40 +168,30 @@ async function startMC() {
         mcStatus = 'stopped';
         mcProcess = null;
         players = [];
-        broadcast({ type: 'status', status: 'stopped', message: `Server stopped (code ${code})` });
+        broadcast({ type: 'status', status: 'stopped' });
         broadcast({ type: 'players', players: [] });
     });
     
     return { success: true };
 }
 
-// Stop server
 function stopMC() {
-    if (!mcProcess) return { error: 'Server not running' };
-    
+    if (!mcProcess) return { error: 'Not running' };
     mcStatus = 'stopping';
-    broadcast({ type: 'status', status: 'stopping', message: 'Stopping server...' });
+    broadcast({ type: 'status', status: 'stopping' });
     mcProcess.stdin.write('stop\n');
-    
-    setTimeout(() => {
-        if (mcProcess) {
-            mcProcess.kill('SIGTERM');
-        }
-    }, 10000);
-    
+    setTimeout(() => { if (mcProcess) mcProcess.kill(); }, 10000);
     return { success: true };
 }
 
-// Send command to MC
 function sendCommand(cmd) {
-    if (!mcProcess) return { error: 'Server not running' };
+    if (!mcProcess) return { error: 'Not running' };
     mcProcess.stdin.write(cmd + '\n');
     return { success: true };
 }
 
-// WebSocket console
+// WebSocket
 wss.on('connection', (ws) => {
-    // Send current state
     ws.send(JSON.stringify({ type: 'status', status: mcStatus }));
     ws.send(JSON.stringify({ type: 'players', players }));
     ws.send(JSON.stringify({ type: 'logs', data: mcLogs.join('') }));
@@ -194,38 +199,18 @@ wss.on('connection', (ws) => {
     ws.on('message', (msg) => {
         try {
             const { type, data } = JSON.parse(msg);
-            if (type === 'command') {
-                sendCommand(data);
-            }
+            if (type === 'command') sendCommand(data);
         } catch (e) {}
     });
 });
 
-// API endpoints
-app.get('/api/status', (req, res) => {
-    res.json({ status: mcStatus, players, logsCount: mcLogs.length });
-});
-
-app.post('/api/start', async (req, res) => {
-    res.json(await startMC());
-});
-
-app.post('/api/stop', (req, res) => {
-    res.json(stopMC());
-});
-
-app.post('/api/command', (req, res) => {
-    res.json(sendCommand(req.body.cmd || ''));
-});
-
-app.get('/api/logs', (req, res) => {
-    res.json({ logs: mcLogs.slice(-100) });
-});
-
+// API
+app.get('/api/status', (req, res) => res.json({ status: mcStatus, players, logsCount: mcLogs.length }));
+app.post('/api/start', async (req, res) => res.json(await startMC()));
+app.post('/api/stop', (req, res) => res.json(stopMC()));
+app.post('/api/command', (req, res) => res.json(sendCommand(req.body.cmd || '')));
+app.get('/api/logs', (req, res) => res.json({ logs: mcLogs.slice(-100) }));
 app.get('/health', (req, res) => res.send('OK'));
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-    console.log(`Dashboard on port ${PORT}`);
-    console.log('Visit the dashboard to start the Minecraft server!');
-});
+server.listen(PORT, () => console.log('Dashboard on ' + PORT));
