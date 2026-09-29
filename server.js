@@ -12,7 +12,6 @@ const wss = new WebSocket.Server({ server, path: '/ws' });
 app.use(express.json({ limit: '10mb' }));
 app.use(express.static('public'));
 
-// Single server directory
 const DATA_DIR = '/tmp/mcdata';
 const SERVER_DIR = DATA_DIR + '/server';
 const JAVA_DIR = DATA_DIR + '/java';
@@ -92,50 +91,117 @@ function log(msg) {
 // ==================== PLAYIT TUNNEL ====================
 async function installPlayit() {
     const playitBin = PLAYIT_DIR + '/playit';
-    if (fs.existsSync(playitBin)) return true;
+    if (fs.existsSync(playitBin)) {
+        log('playit.gg already installed');
+        return true;
+    }
     log('Installing playit.gg...');
     try {
         ensureDirs();
         execSync(`wget -q -O ${playitBin} "https://builds.playit.gg/1.0.10/playit-linux-amd64"`, { timeout: 120000 });
         execSync(`chmod +x ${playitBin}`);
-        log('playit.gg installed');
+        log('playit.gg installed successfully');
         return true;
-    } catch (e) { log('playit.gg failed: ' + e.message); return false; }
+    } catch (e) { 
+        log('playit.gg install failed: ' + e.message); 
+        return false; 
+    }
 }
 
 async function startTunnel() {
-    if (playitProcess) return;
-    if (!await installPlayit()) return;
-    log('Starting tunnel...');
+    if (playitProcess) {
+        log('Tunnel already running');
+        return;
+    }
+    
+    if (!await installPlayit()) {
+        log('Cannot start tunnel - install failed');
+        return;
+    }
+    
+    log('Starting playit.gg tunnel...');
     tunnelStatus = 'starting';
     broadcast({ type: 'tunnel', status: tunnelStatus });
     
-    playitProcess = spawn(PLAYIT_DIR + '/playit', [], { cwd: PLAYIT_DIR, env: { ...process.env, HOME: PLAYIT_DIR } });
+    const playitBin = PLAYIT_DIR + '/playit';
     
-    const handleData = (data) => {
+    // Run playit
+    playitProcess = spawn(playitBin, [], { 
+        cwd: PLAYIT_DIR,
+        env: { ...process.env, HOME: PLAYIT_DIR }
+    });
+    
+    playitProcess.stdout.on('data', (data) => {
         const text = data.toString();
+        console.log('[playit stdout]', text);
+        
+        // Check for claim URL
         const claimMatch = text.match(/https:\/\/playit\.gg\/claim\/[\w-]+/);
         if (claimMatch) {
             tunnelAddress = claimMatch[0];
             tunnelStatus = 'claim';
-            log('🔗 Claim: ' + tunnelAddress);
+            log('🔗 CLAIM YOUR TUNNEL: ' + tunnelAddress);
             broadcast({ type: 'tunnel', status: 'claim', url: tunnelAddress });
         }
-        const addrMatch = text.match(/([a-z0-9-]+\.(?:at\.playit\.gg|ply\.gg):\d+)/i);
+        
+        // Check for tunnel address
+        const addrMatch = text.match(/([a-z0-9-]+\.(?:at\.playit\.gg|ply\.gg|joinmc\.link):\d+)/i);
         if (addrMatch) {
             tunnelAddress = addrMatch[1];
             tunnelStatus = 'connected';
-            log('✅ Tunnel: ' + tunnelAddress);
+            log('✅ TUNNEL CONNECTED: ' + tunnelAddress);
             broadcast({ type: 'tunnel', status: 'connected', address: tunnelAddress });
         }
-    };
-    playitProcess.stdout.on('data', handleData);
-    playitProcess.stderr.on('data', handleData);
-    playitProcess.on('close', () => { playitProcess = null; tunnelStatus = 'stopped'; tunnelAddress = null; broadcast({ type: 'tunnel', status: 'stopped' }); });
+    });
+    
+    playitProcess.stderr.on('data', (data) => {
+        const text = data.toString();
+        console.log('[playit stderr]', text);
+        
+        // Also check stderr for addresses
+        const claimMatch = text.match(/https:\/\/playit\.gg\/claim\/[\w-]+/);
+        if (claimMatch) {
+            tunnelAddress = claimMatch[0];
+            tunnelStatus = 'claim';
+            log('🔗 CLAIM YOUR TUNNEL: ' + tunnelAddress);
+            broadcast({ type: 'tunnel', status: 'claim', url: tunnelAddress });
+        }
+        
+        const addrMatch = text.match(/([a-z0-9-]+\.(?:at\.playit\.gg|ply\.gg|joinmc\.link):\d+)/i);
+        if (addrMatch) {
+            tunnelAddress = addrMatch[1];
+            tunnelStatus = 'connected';
+            log('✅ TUNNEL CONNECTED: ' + tunnelAddress);
+            broadcast({ type: 'tunnel', status: 'connected', address: tunnelAddress });
+        }
+    });
+    
+    playitProcess.on('error', (err) => {
+        log('Tunnel error: ' + err.message);
+        tunnelStatus = 'error';
+        broadcast({ type: 'tunnel', status: 'error' });
+    });
+    
+    playitProcess.on('close', (code) => {
+        log(`Tunnel process exited (code ${code})`);
+        playitProcess = null;
+        if (tunnelStatus !== 'claim') {
+            tunnelStatus = 'stopped';
+            tunnelAddress = null;
+        }
+        broadcast({ type: 'tunnel', status: tunnelStatus, address: tunnelAddress, url: tunnelAddress });
+    });
 }
 
 function stopTunnel() {
-    if (playitProcess) { playitProcess.kill(); playitProcess = null; tunnelStatus = 'stopped'; tunnelAddress = null; }
+    if (playitProcess) { 
+        playitProcess.kill(); 
+        playitProcess = null; 
+        tunnelStatus = 'stopped'; 
+        tunnelAddress = null;
+        broadcast({ type: 'tunnel', status: 'stopped' });
+        log('Tunnel stopped');
+    }
 }
 
 // ==================== JAVA ====================
@@ -180,7 +246,6 @@ async function downloadServer() {
     status = 'downloading';
     broadcast({ type: 'status', status });
     
-    // Remove old jar
     if (fs.existsSync(jarPath)) fs.unlinkSync(jarPath);
     
     const javaDir = getJavaDir(config.version);
@@ -209,8 +274,8 @@ async function downloadServer() {
 
 function createConfigs() {
     if (!fs.existsSync(SERVER_DIR + '/eula.txt')) fs.writeFileSync(SERVER_DIR + '/eula.txt', 'eula=true\n');
-    if (!fs.existsSync(SERVER_DIR + '/server.properties')) {
-        fs.writeFileSync(SERVER_DIR + '/server.properties', `server-port=25565
+    // Always update server.properties to disable pause-when-empty
+    fs.writeFileSync(SERVER_DIR + '/server.properties', `server-port=25565
 online-mode=false
 max-players=20
 view-distance=6
@@ -220,8 +285,9 @@ difficulty=normal
 gamemode=survival
 motd=\\u00a7bKuros MC Server
 enable-command-block=true
+pause-when-empty-seconds=-1
+max-tick-time=120000
 `);
-    }
 }
 
 async function startServer() {
@@ -257,7 +323,9 @@ async function startServer() {
         broadcast({ type: 'players', players });
     });
     
-    startTunnel();
+    // Start tunnel after a short delay
+    setTimeout(() => startTunnel(), 3000);
+    
     return { success: true };
 }
 
@@ -296,7 +364,6 @@ async function restartServer() {
     return startServer();
 }
 
-// Change version (same server, just re-download jar)
 async function changeServer(newType, newVersion) {
     const wasRunning = !!mcProcess;
     if (wasRunning) { stopServer(); await new Promise(r => { const i = setInterval(() => { if (!mcProcess) { clearInterval(i); r(); } }, 500); setTimeout(() => { clearInterval(i); r(); }, 20000); }); }
@@ -305,9 +372,7 @@ async function changeServer(newType, newVersion) {
     config.version = newVersion;
     saveConfig();
     
-    // Remove old jar to force re-download
     try { fs.unlinkSync(SERVER_DIR + '/server.jar'); } catch(e) {}
-    // Clean fabric leftovers
     try { execSync(`rm -rf ${SERVER_DIR}/.fabric ${SERVER_DIR}/libraries ${SERVER_DIR}/.mixin*`); } catch(e) {}
     
     log(`Changed to ${newType} ${newVersion}`);
@@ -335,16 +400,14 @@ function backupWorld() {
         execSync(`cp -r ${worldDir} ${backupPath}`);
         log(`Backup created: ${backupName}`);
         return { success: true, name: backupName };
-    } catch (e) {
-        return { error: 'Backup failed: ' + e.message };
-    }
+    } catch (e) { return { error: 'Backup failed: ' + e.message }; }
 }
 
 function listBackups() {
     try {
         const backups = fs.readdirSync(BACKUPS_DIR).filter(f => f.startsWith('world-')).map(name => {
             const stat = fs.statSync(BACKUPS_DIR + '/' + name);
-            return { name, date: stat.mtime, size: Math.round(stat.size / 1024 / 1024) + 'MB' };
+            return { name, date: stat.mtime };
         }).sort((a, b) => b.date - a.date);
         return backups;
     } catch (e) { return []; }
@@ -353,10 +416,8 @@ function listBackups() {
 function restoreBackup(name) {
     const backupPath = BACKUPS_DIR + '/' + name;
     const worldDir = SERVER_DIR + '/world';
-    
     if (!fs.existsSync(backupPath)) return { error: 'Backup not found' };
     if (mcProcess) return { error: 'Stop server first' };
-    
     try {
         execSync(`rm -rf ${worldDir} && cp -r ${backupPath} ${worldDir}`);
         log(`Restored backup: ${name}`);
@@ -365,17 +426,15 @@ function restoreBackup(name) {
 }
 
 function deleteBackup(name) {
-    try {
-        execSync(`rm -rf ${BACKUPS_DIR}/${name}`);
-        return { success: true };
-    } catch (e) { return { error: 'Delete failed' }; }
+    try { execSync(`rm -rf ${BACKUPS_DIR}/${name}`); return { success: true }; } 
+    catch (e) { return { error: 'Delete failed' }; }
 }
 
 function resetWorld() {
     if (mcProcess) return { error: 'Stop server first' };
     try {
         execSync(`rm -rf ${SERVER_DIR}/world ${SERVER_DIR}/world_nether ${SERVER_DIR}/world_the_end`);
-        log('World reset - new world on next start');
+        log('World reset');
         return { success: true };
     } catch (e) { return { error: 'Reset failed' }; }
 }
@@ -384,139 +443,96 @@ function resetWorld() {
 function listFiles(subpath = '') {
     const dir = path.join(SERVER_DIR, subpath);
     if (!dir.startsWith(SERVER_DIR)) return { error: 'Invalid path' };
-    
     try {
         const items = fs.readdirSync(dir).map(name => {
             const fullPath = path.join(dir, name);
             const stat = fs.statSync(fullPath);
-            return {
-                name,
-                path: path.join(subpath, name),
-                isDir: stat.isDirectory(),
-                size: stat.size,
-                modified: stat.mtime
-            };
-        }).sort((a, b) => {
-            if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;
-            return a.name.localeCompare(b.name);
-        });
+            return { name, path: path.join(subpath, name), isDir: stat.isDirectory(), size: stat.size };
+        }).sort((a, b) => (a.isDir !== b.isDir) ? (a.isDir ? -1 : 1) : a.name.localeCompare(b.name));
         return { items, path: subpath };
-    } catch (e) { return { error: 'Cannot read directory' }; }
+    } catch (e) { return { error: 'Cannot read' }; }
 }
 
 function readFile(subpath) {
     const filePath = path.join(SERVER_DIR, subpath);
     if (!filePath.startsWith(SERVER_DIR)) return { error: 'Invalid path' };
-    
-    try {
-        const content = fs.readFileSync(filePath, 'utf8');
-        return { content, path: subpath };
-    } catch (e) { return { error: 'Cannot read file' }; }
+    try { return { content: fs.readFileSync(filePath, 'utf8'), path: subpath }; } 
+    catch (e) { return { error: 'Cannot read' }; }
 }
 
 function writeFile(subpath, content) {
     const filePath = path.join(SERVER_DIR, subpath);
     if (!filePath.startsWith(SERVER_DIR)) return { error: 'Invalid path' };
-    
-    try {
-        fs.writeFileSync(filePath, content);
-        log(`File saved: ${subpath}`);
-        return { success: true };
-    } catch (e) { return { error: 'Cannot write file' }; }
+    try { fs.writeFileSync(filePath, content); log(`Saved: ${subpath}`); return { success: true }; } 
+    catch (e) { return { error: 'Cannot write' }; }
 }
 
 function deleteFile(subpath) {
     const filePath = path.join(SERVER_DIR, subpath);
     if (!filePath.startsWith(SERVER_DIR)) return { error: 'Invalid path' };
-    
     try {
         const stat = fs.statSync(filePath);
-        if (stat.isDirectory()) {
-            execSync(`rm -rf "${filePath}"`);
-        } else {
-            fs.unlinkSync(filePath);
-        }
-        log(`Deleted: ${subpath}`);
+        if (stat.isDirectory()) execSync(`rm -rf "${filePath}"`);
+        else fs.unlinkSync(filePath);
         return { success: true };
     } catch (e) { return { error: 'Cannot delete' }; }
 }
 
-// ==================== PLUGINS/MODS ====================
+// ==================== PLUGINS ====================
 function listPlugins() {
-    const pluginsDir = SERVER_DIR + '/plugins';
-    const modsDir = SERVER_DIR + '/mods';
-    
-    const plugins = fs.existsSync(pluginsDir) ? fs.readdirSync(pluginsDir).filter(f => f.endsWith('.jar')) : [];
-    const mods = fs.existsSync(modsDir) ? fs.readdirSync(modsDir).filter(f => f.endsWith('.jar')) : [];
-    
+    const plugins = fs.existsSync(SERVER_DIR + '/plugins') ? fs.readdirSync(SERVER_DIR + '/plugins').filter(f => f.endsWith('.jar')) : [];
+    const mods = fs.existsSync(SERVER_DIR + '/mods') ? fs.readdirSync(SERVER_DIR + '/mods').filter(f => f.endsWith('.jar')) : [];
     return { plugins, mods };
 }
 
 async function installPlugin(url, type = 'plugin') {
     const dir = type === 'mod' ? SERVER_DIR + '/mods' : SERVER_DIR + '/plugins';
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    
     const fileName = url.split('/').pop().split('?')[0] || 'plugin.jar';
-    const filePath = dir + '/' + fileName;
-    
     try {
-        log(`Downloading ${type}: ${fileName}...`);
-        execSync(`wget -q -O "${filePath}" "${url}"`, { timeout: 120000 });
-        log(`Installed ${type}: ${fileName}`);
+        log(`Installing ${type}: ${fileName}...`);
+        execSync(`wget -q -O "${dir}/${fileName}" "${url}"`, { timeout: 120000 });
+        log(`Installed: ${fileName}`);
         return { success: true, name: fileName };
-    } catch (e) {
-        return { error: 'Download failed' };
-    }
+    } catch (e) { return { error: 'Download failed' }; }
 }
 
 function removePlugin(name, type = 'plugin') {
     const dir = type === 'mod' ? SERVER_DIR + '/mods' : SERVER_DIR + '/plugins';
-    const filePath = dir + '/' + name;
-    
-    try {
-        fs.unlinkSync(filePath);
-        log(`Removed ${type}: ${name}`);
-        return { success: true };
-    } catch (e) { return { error: 'Remove failed' }; }
+    try { fs.unlinkSync(dir + '/' + name); log(`Removed: ${name}`); return { success: true }; } 
+    catch (e) { return { error: 'Remove failed' }; }
 }
 
-// ==================== WEBSOCKET ====================
+// ==================== ROUTES ====================
 wss.on('connection', (ws) => {
     ws.send(JSON.stringify({ 
         type: 'init', status, players, config, logs: logs.slice(-100), versions: cachedVersions,
-        tunnel: { status: tunnelStatus, address: tunnelAddress }
+        tunnel: { status: tunnelStatus, address: tunnelAddress, url: tunnelStatus === 'claim' ? tunnelAddress : null }
     }));
-    ws.on('message', (msg) => { 
-        try { const { type, data } = JSON.parse(msg); if (type === 'command') sendCommand(data); } catch (e) {} 
-    });
+    ws.on('message', (msg) => { try { const { type, data } = JSON.parse(msg); if (type === 'command') sendCommand(data); } catch (e) {} });
 });
 
-// ==================== API ====================
 app.get('/api/status', (req, res) => res.json({ status, players, config, tunnel: { status: tunnelStatus, address: tunnelAddress } }));
 app.get('/api/versions', (req, res) => res.json(cachedVersions));
 app.post('/api/start', async (req, res) => res.json(await startServer()));
 app.post('/api/stop', (req, res) => res.json(stopServer()));
 app.post('/api/restart', async (req, res) => res.json(await restartServer()));
-app.post('/api/change', async (req, res) => { 
-    const { serverType, version } = req.body; 
-    res.json(await changeServer(serverType, version)); 
-});
+app.post('/api/change', async (req, res) => res.json(await changeServer(req.body.serverType, req.body.version)));
 app.post('/api/command', (req, res) => res.json(sendCommand(req.body.cmd || '')));
+app.post('/api/tunnel/start', async (req, res) => { await startTunnel(); res.json({ success: true }); });
+app.post('/api/tunnel/stop', (req, res) => { stopTunnel(); res.json({ success: true }); });
 
-// World
 app.post('/api/world/backup', (req, res) => res.json(backupWorld()));
 app.get('/api/world/backups', (req, res) => res.json(listBackups()));
 app.post('/api/world/restore', (req, res) => res.json(restoreBackup(req.body.name)));
 app.post('/api/world/delete-backup', (req, res) => res.json(deleteBackup(req.body.name)));
 app.post('/api/world/reset', (req, res) => res.json(resetWorld()));
 
-// Files
 app.get('/api/files', (req, res) => res.json(listFiles(req.query.path || '')));
 app.get('/api/files/read', (req, res) => res.json(readFile(req.query.path)));
 app.post('/api/files/write', (req, res) => res.json(writeFile(req.body.path, req.body.content)));
 app.post('/api/files/delete', (req, res) => res.json(deleteFile(req.body.path)));
 
-// Plugins/Mods
 app.get('/api/plugins', (req, res) => res.json(listPlugins()));
 app.post('/api/plugins/install', async (req, res) => res.json(await installPlugin(req.body.url, req.body.type)));
 app.post('/api/plugins/remove', (req, res) => res.json(removePlugin(req.body.name, req.body.type)));
@@ -524,7 +540,6 @@ app.post('/api/plugins/remove', (req, res) => res.json(removePlugin(req.body.nam
 app.get('/api/logs', (req, res) => res.json({ logs: logs.slice(-(parseInt(req.query.count) || 100)) }));
 app.get('/health', (req, res) => res.send('OK'));
 
-// Start
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, async () => {
     console.log(`Dashboard on port ${PORT}`);
