@@ -119,7 +119,7 @@ async function startTunnel() {
         tunnelStatus = 'starting';
         broadcast({ type: 'tunnel', status: tunnelStatus });
         
-        playitProcess = spawn(playitBin, ['--secret-path', SECRET_FILE], { 
+        playitProcess = spawn(playitBin, ['--secret-path', SECRET_FILE, '--socket-path', PLAYIT_DIR + '/playit.sock', '--platform-docker'], { 
             cwd: PLAYIT_DIR,
             env: { ...process.env, HOME: PLAYIT_DIR }
         });
@@ -511,4 +511,4 @@ process.on('SIGTERM', () => {
     stopTunnel();
     setTimeout(() => process.exit(0), 12000);
 });
-// Build trigger: 1790681798
+// v 1790681798
