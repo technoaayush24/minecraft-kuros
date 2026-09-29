@@ -25,7 +25,7 @@ let status = 'stopped';
 let players = [];
 let tunnelAddress = null;
 let tunnelStatus = 'stopped';
-let config = { serverType: 'vanilla', version: '1.21.4', port: 25565, autoStart: true };
+let config = { serverType: 'vanilla', version: '1.21.4', port: 25565, autoStart: false };
 
 function ensureDirs() {
     [DATA_DIR, SERVER_DIR, JAVA_DIR, BACKUPS_DIR, SERVER_DIR + '/plugins', SERVER_DIR + '/mods'].forEach(dir => {
