@@ -279,7 +279,7 @@
         </main>
     </div>
     
-    <script>console.log("SCRIPT START");
+    <script>
         const $ = id => document.getElementById(id);
         let ws, config = {}, status = 'stopped', startTime, versions = {
             vanilla: ['26.3', '26.2', '26.1', '26.0', '25.1', '25.0', '1.21.4', '1.21.3', '1.21.1', '1.21', '1.20.6', '1.20.4', '1.20.1', '1.19.4', '1.18.2', '1.16.5', '1.12.2', '1.8.9'],
@@ -563,7 +563,7 @@
             try { updateVersions(); } catch(e) { $('console').textContent += 'Version error: ' + e.message + '\n'; }
             try { connect(); $('console').textContent += 'WebSocket connecting...\n'; } catch(e) { $('console').textContent += 'Connect error: ' + e.message + '\n'; }
         }
-        console.log("ABOUT TO SETTIMEOUT"); setTimeout(initApp, 0); console.log("SETTIMEOUT DONE");
+        setTimeout(initApp, 0);
     </script>
 
     <div class="modal-overlay" id="modal">
