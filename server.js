@@ -334,8 +334,8 @@ enforce-whitelist=false
 
 async function installOptimizationPlugins() {
     if (config.serverType !== 'paper') return;
-    log('[Optimize] Paper 26+ includes Spark profiler built-in');
-    log('[Optimize] Use /spark in-game to profile performance');
+    log('[Optimize] Config optimizations applied');
+    log('[Optimize] view-distance=6, simulation-distance=4 for low RAM');
 }
 
 function optimizeServerConfigs() {
@@ -381,7 +381,7 @@ async function startServer() {
         await installOptimizationPlugins();
     }
     createConfigs(); saveConfig();
-    mcProcess = spawn(javaDir + '/bin/java', ['-Xms128M', '-Xmx380M', '-XX:+UseG1GC', '-jar', 'server.jar', 'nogui'], 
+    mcProcess = spawn(javaDir + '/bin/java', ['-Xms128M', '-Xmx380M', '-XX:+UseG1GC', '-XX:G1HeapRegionSize=4M', '-XX:+UnlockExperimentalVMOptions', '-XX:G1MixedGCCountTarget=4', '-XX:MaxGCPauseMillis=100', '-jar', 'server.jar', 'nogui'], 
         { cwd: SERVER_DIR, env: { ...process.env, JAVA_HOME: javaDir } });
     mcProcess.stdout.on('data', handleOutput);
     mcProcess.stderr.on('data', handleOutput);
