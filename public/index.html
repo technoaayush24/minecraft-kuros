@@ -563,7 +563,7 @@
             try { updateVersions(); } catch(e) { $('console').textContent += 'Version error: ' + e.message + '\n'; }
             try { connect(); $('console').textContent += 'WebSocket connecting...\n'; } catch(e) { $('console').textContent += 'Connect error: ' + e.message + '\n'; }
         }
-        if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', initApp); } else { initApp(); }
+        setTimeout(initApp, 0);
     </script>
 
     <div class="modal-overlay" id="modal">
