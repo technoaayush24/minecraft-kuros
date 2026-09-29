@@ -95,7 +95,7 @@ function getJavaVersion(mcVersion) {
     const patch = parseInt(match[2]) || 0;
     
     // Java 21: MC 1.20.5 - 1.21.x
-    if (minor >= 21) return 25; // Paper 26+ needs Java 25
+    if (minor >= 21) return 21;
     if (minor === 20 && patch >= 5) return 21;
     
     // Java 17: MC 1.18 - 1.20.4
@@ -113,7 +113,7 @@ function getJavaDir(mcVersion) { return `${JAVA_DIR}/jre${getJavaVersion(mcVersi
 
 const ALL_VERSIONS = {
     vanilla: ['26.3', '26.2', '26.1', '26.0', '25.1', '25.0', '1.21.4', '1.21.3', '1.21.1', '1.21', '1.20.6', '1.20.4', '1.20.1', '1.19.4', '1.18.2', '1.16.5', '1.12.2', '1.8.9'],
-    paper: ['26.2', '26.1', '26.0', '25.1', '25.0'],
+    paper: ['1.21.4', '1.21.3', '1.21.1', '1.21', '1.20.6', '1.20.4', '1.20.1', '1.19.4', '1.18.2', '1.16.5'],
     fabric: ['1.21.4', '1.21.3', '1.21.1', '1.21', '1.20.6', '1.20.4', '1.20.1', '1.19.4', '1.18.2']
 };
 
@@ -290,14 +290,14 @@ async function downloadServer() {
             if (!url) throw new Error('Version not found');
             execSync(`wget -q -O "${jarPath}" "${url}"`, { timeout: 300000 });
         } else if (config.serverType === 'paper') {
-            // PaperMC API v2 is sunset - scrape from downloads page
-            log('Fetching Paper download URL from papermc.io...');
-            const html = execSync(`wget -qO- "https://papermc.io/downloads/paper"`, { timeout: 30000 }).toString();
-            const urlMatch = html.match(/https:\/\/fill-data\.papermc\.io\/v1\/objects\/[a-f0-9]+\/paper-[0-9.]+-\d+\.jar/);
-            if (!urlMatch) throw new Error('Could not find Paper download URL');
-            const paperUrl = urlMatch[0];
-            log(`Found Paper URL: ${paperUrl}`);
-            execSync(`wget -q -O "${jarPath}" "${paperUrl}"`, { timeout: 300000 });
+            // Use PaperMC v3 API
+            log('Fetching Paper builds from fill.papermc.io...');
+            const builds = JSON.parse(execSync(`wget -qO- "https://fill.papermc.io/v3/projects/paper/versions/${config.version}/builds"`, { timeout: 30000 }).toString());
+            if (!builds || builds.length === 0) throw new Error('No Paper builds found for ' + config.version);
+            const latest = builds[0]; // First is latest
+            const downloadUrl = latest.downloads['server:default'].url;
+            log(`Found Paper: ${latest.downloads['server:default'].name}`);
+            execSync(`wget -q -O "${jarPath}" "${downloadUrl}"`, { timeout: 300000 });
         } else if (config.serverType === 'fabric') {
             const installer = JSON.parse(execSync('wget -qO- "https://meta.fabricmc.net/v2/versions/installer"', { timeout: 15000 }).toString());
             execSync(`wget -q -O ${SERVER_DIR}/fabric-installer.jar "${installer[0]?.url}"`, { timeout: 120000 });
