@@ -12,7 +12,7 @@ const wss = new WebSocket.Server({ server, path: '/ws' });
 app.use(express.json({ limit: '10mb' }));
 app.use(express.static('public'));
 
-const DATA_DIR = process.env.DATA_DIR || '/app/mcdata';
+const DATA_DIR = process.env.DATA_DIR || '/tmp/mcdata';
 const SERVER_DIR = DATA_DIR + '/server';
 const JAVA_DIR = DATA_DIR + '/java';
 const BACKUPS_DIR = DATA_DIR + '/backups';
